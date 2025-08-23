@@ -1,3 +1,8 @@
 .env
-*.json
+historical_prices.json
+live_risk.json
+position.json
+live_analysis.json
+package-lock.json
 node_modules/
+.db
