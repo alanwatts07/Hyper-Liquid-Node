@@ -1,63 +1,62 @@
 // src/components/StateManager.js
 import logger from '../utils/logger.js';
+import fs from 'fs/promises';
+
+const POSITION_FILE = 'position.json';
 
 class StateManager {
-    constructor(db) {
+    // ... constructor is the same ...
+    constructor(db, tradeExecutor) {
         this.db = db;
-        // The in-memory state, which is the single source of truth while the bot is running.
-        this.state = {
-            inPosition: false,
-            triggerArmed: false,
-        };
+        this.tradeExecutor = tradeExecutor;
+        this.state = { inPosition: false, triggerArmed: false };
     }
 
-    /**
-     * Loads the initial state by checking the database for any open positions.
-     * This ensures the bot knows if it's already in a trade when it starts.
-     */
     async loadInitialState() {
-        logger.info("StateManager: Loading initial state from database...");
-        const openPositions = await this.db.getOpenPositions();
+        logger.info("StateManager: Loading initial state from Hyperliquid exchange...");
+        try {
+            const clearinghouseState = await this.tradeExecutor.getClearinghouseState();
+            if (!clearinghouseState || !Array.isArray(clearinghouseState.assetPositions)) {
+                throw new Error("Could not fetch valid asset position data.");
+            }
+            const openPositions = clearinghouseState.assetPositions.filter(p => p && p.position && Number(p.position.szi) !== 0);
 
-        if (openPositions.length > 0) {
-            this.state.inPosition = true;
-            logger.info(`StateManager: Initial state loaded. Found an open position for ${openPositions[0].asset}.`);
-        } else {
+            if (openPositions.length > 0) {
+                // --- FIX: Save the entire position object to the file ---
+                const livePosition = openPositions[0].position;
+                logger.warn(`Found existing open position for ${livePosition.coin}! Creating ${POSITION_FILE}.`);
+                await fs.writeFile(POSITION_FILE, JSON.stringify(livePosition, null, 2));
+                
+                // Update the DB with the key info
+                await this.db.updatePosition(livePosition.coin, Number(livePosition.szi) > 0 ? "LONG" : "SHORT", Math.abs(Number(livePosition.szi)), Number(livePosition.entryPx), "OPEN");
+                this.state.inPosition = true;
+
+            } else {
+                logger.info(`No open positions found on exchange. Ensuring ${POSITION_FILE} is deleted.`);
+                await this.deletePositionFile();
+                this.state.inPosition = false;
+            }
+        } catch (error) {
+            logger.error(`CRITICAL: Failed to load initial state: ${error.message}`);
             this.state.inPosition = false;
-            logger.info("StateManager: Initial state loaded. No open positions found.");
         }
-        // The trigger always starts as disarmed.
         this.state.triggerArmed = false;
     }
 
-    /**
-     * Checks if the bot is currently in an open position.
-     * @returns {boolean}
-     */
-    isInPosition() {
-        return this.state.inPosition;
+    async deletePositionFile() {
+        try {
+            await fs.unlink(POSITION_FILE);
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                logger.error(`Error deleting ${POSITION_FILE}: ${error.message}`);
+            }
+        }
     }
 
-    /**
-     * Sets the bot's position status.
-     * @param {boolean} status - true if in a position, false otherwise.
-     */
-    setInPosition(status) {
-        this.state.inPosition = status;
-    }
-
-    /**
-     * Checks if the buy signal trigger is currently armed.
-     * @returns {boolean}
-     */
-    isTriggerArmed() {
-        return this.state.triggerArmed;
-    }
-
-    /**
-     * Sets the trigger's armed status.
-     * @param {boolean} status - true to arm the trigger, false to disarm.
-     */
+    // ... rest of the file is the same ...
+    isInPosition() { return this.state.inPosition; }
+    setInPosition(status) { this.state.inPosition = status; }
+    isTriggerArmed() { return this.state.isTriggerArmed; }
     setTriggerArmed(status) {
         if (this.state.triggerArmed !== status) {
             this.state.triggerArmed = status;
