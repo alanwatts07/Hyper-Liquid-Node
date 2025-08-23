@@ -35,16 +35,23 @@ class Monitor {
                 console.log(`   Current Price: $${formatNum(riskData.currentPrice, 2)}`);
                 console.log(`   Live ROE:      ${riskData.roe.includes('-') ? chalk.red.bold(riskData.roe) : chalk.green.bold(riskData.roe)}`);
                 console.log(chalk.gray('   ----------------------------------'));
-                
-                // --- FINAL FIX: Display both the estimated price and the actual ROE trigger ---
+
+                // --- FINAL FIX: Calculate leveraged SL/TP prices for display ---
+                const leverage = config.trading.leverage;
+                const leveragedSLPct = config.risk.stopLossPercentage / leverage;
+                const leveragedTPPct = config.risk.takeProfitPercentage / leverage;
+                const stopLossPrice = riskData.entryPrice * (1 - leveragedSLPct);
+                const takeProfitPrice = riskData.entryPrice * (1 + leveragedTPPct);
+
+
                 if (riskData.fibStopActive) {
                     console.log(`   Stop Type:     ${chalk.magenta.bold('Fib Trail Stop (Price-Based)')}`);
                     console.log(`   Stop Price:    $${formatNum(riskData.stopPrice, 2)}`);
                 } else {
                     console.log(`   Stop Type:     ${chalk.cyan('Fixed Stop-Loss (ROE-Based)')}`);
-                    console.log(`   Est. SL Price: $${formatNum(riskData.stopLossPrice, 2)} ${chalk.gray('(Informational)')}`);
+                    console.log(`   Actual SL Price: $${formatNum(stopLossPrice, 2)} ${chalk.gray(`(for ${leverage}x leverage)`)}`);
                 }
-                console.log(`   Est. TP Price: $${formatNum(riskData.takeProfitPrice, 2)} ${chalk.gray('(Informational)')}`);
+                console.log(`   Actual TP Price: $${formatNum(takeProfitPrice, 2)} ${chalk.gray(`(for ${leverage}x leverage)`)}`);
                 console.log(`   Trigger ROE:   ${chalk.red.bold('< ' + (config.risk.stopLossPercentage * -100) + '%')} or ${chalk.green.bold('> ' + (config.risk.takeProfitPercentage * 100) + '%')}`);
 
 
