@@ -56,7 +56,8 @@ class TradingBot {
             if (!this.latestAnalysis) return;
 
             let signal = this.signalGenerator.generate(this.latestAnalysis);
-
+            // VVVVVV --- ADD THE LOGGING CALL RIGHT HERE --- VVVVVV
+            await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal }); // <-- ADD THIS LINE
             try {
                 const overrideData = JSON.parse(await fs.readFile('manual_override.json', 'utf8'));
                 if (overrideData.signal === 'buy') {

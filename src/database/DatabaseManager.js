@@ -1,12 +1,14 @@
-// src/database/DatabaseManager.js
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import logger from '../utils/logger.js';
+import DatabaseStreamer from '../utils/DatabaseStreamer.js'; // <-- IMPORT
 
 class DatabaseManager {
     constructor(dbFile) {
         this.dbFile = dbFile;
         this.db = null;
+        // The log file will be named 'db_stream.json' in your project's root folder
+        this.streamer = new DatabaseStreamer('db_stream.json'); // <-- INITIALIZE
     }
 
     /**
@@ -68,6 +70,8 @@ class DatabaseManager {
                 'INSERT OR IGNORE INTO prices (timestamp, price) VALUES (?, ?)',
                 [timestamp, price]
             );
+            // STREAM THE CHANGE
+            this.streamer.logChange('prices', 'INSERT', priceData);
         } catch (error) {
             logger.error(`Error saving price data: ${error.message}`);
         }
@@ -97,6 +101,7 @@ class DatabaseManager {
      */
     async updatePosition(asset, direction, size, entry_px, status) {
         const timestamp = new Date().toISOString();
+        const positionData = { asset, direction, size, entry_px, status, last_update: timestamp };
         try {
             await this.db.run(`
                 INSERT INTO positions (asset, direction, size, entry_px, status, last_update)
@@ -109,6 +114,8 @@ class DatabaseManager {
                     last_update = excluded.last_update;
             `, [asset, direction, size, entry_px, status, timestamp]);
             logger.info(`Position updated for ${asset}: ${status}`);
+            // STREAM THE CHANGE
+            this.streamer.logChange('positions', 'UPDATE', positionData);
         } catch (error) {
             logger.error(`Error updating position for ${asset}: ${error.message}`);
         }
@@ -136,11 +143,14 @@ class DatabaseManager {
     async logEvent(eventType, details) {
         const timestamp = new Date().toISOString();
         const detailsJson = JSON.stringify(details);
+        const eventData = { timestamp, event_type: eventType, details };
         try {
             await this.db.run(
                 'INSERT INTO events (timestamp, event_type, details) VALUES (?, ?, ?)',
                 [timestamp, eventType, detailsJson]
             );
+            // STREAM THE CHANGE
+            this.streamer.logChange('events', 'INSERT', eventData);
         } catch (error) {
             logger.error(`Error logging event ${eventType}: ${error.message}`);
         }

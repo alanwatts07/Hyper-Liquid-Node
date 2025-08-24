@@ -5,4 +5,4 @@ position.json
 live_analysis.json
 package-lock.json
 node_modules/
-.db
+trading_bot.db
