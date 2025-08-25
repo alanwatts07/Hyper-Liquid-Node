@@ -34,7 +34,7 @@ const config = {
     // Discord Notifications
     discord: {
         webhookUrl: process.env.DISCORD_WEBHOOK_URL,
-        botName: "Hyperliquid Bot",
+        botName: "Bot 1 Hyperliquid",
     },
 
     // Database
