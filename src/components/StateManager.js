@@ -56,8 +56,7 @@ class StateManager {
     // ... rest of the file is the same ...
     isInPosition() { return this.state.inPosition; }
     setInPosition(status) { this.state.inPosition = status; }
-    isTriggerArmed() { return this.state.isTriggerArmed; }
-    setTriggerArmed(status) {
+    isTriggerArmed() { return this.state.triggerArmed; } // FIX: Was this.state.isTriggerArmed    setTriggerArmed(status) {
         if (this.state.triggerArmed !== status) {
             this.state.triggerArmed = status;
             logger.info(`StateManager: Trigger has been ${status ? 'ARMED' : 'DISARMED'}.`);
