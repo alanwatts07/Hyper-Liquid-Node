@@ -106,7 +106,33 @@ class TradingBot {
         if (!this.state.isInPosition() || !this.latestAnalysis) {
             return;
         }
+        try {
+                const overrideData = JSON.parse(await fs.readFile('manual_close.json', 'utf8'));
+                if (overrideData.signal === 'close') {
+                    logger.warn("MANUAL CLOSE DETECTED FROM DISCORD! Closing position now.");
+                    await this.notifier.send("Manual Close Triggered!", "Closing position due to !panic command from Discord.", "warning");
 
+                    const clearinghouseState = await this.tradeExecutor.getClearinghouseState();
+                    const asset = this.config.trading.asset;
+                    const livePosition = clearinghouseState.assetPositions.find(p => p && p.position && p.position.coin === asset);
+
+                    if (livePosition) {
+                        const closeResult = await this.tradeExecutor.closePosition(asset, Number(livePosition.position.szi));
+                        if (closeResult.success) {
+                            this.state.setInPosition(false);
+                            this.riskManager.clearPositionState(asset);
+                            await fs.unlink(POSITION_FILE).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
+                            await fs.unlink('manual_close.json'); // Clean up the signal file
+                            logger.info("Position closed successfully via manual override.");
+                        }
+                    }
+                    return; // Stop further processing in this cycle
+                }
+            } catch (error) {
+                if (error.code !== 'ENOENT') {
+                    logger.error(`Error reading manual_close.json file: ${error.message}`);
+                }
+            }
         try {
             // Fetch live data FIRST. This is now our source of truth.
             const clearinghouseState = await this.tradeExecutor.getClearinghouseState();
