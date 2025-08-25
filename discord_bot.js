@@ -1,13 +1,15 @@
 // discord_bot.js
 
 import 'dotenv/config';
-import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, AttachmentBuilder } from 'discord.js';
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import config from './src/config.js'; // --- IMPORT THE MAIN CONFIG ---
+import config from './src/config.js';
+import { exec } from 'child_process'; // For running scripts
+import puppeteer from 'puppeteer';    // For screenshots
 
 // --- Configuration ---
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -17,6 +19,9 @@ const DB_FILE = path.resolve(process.cwd(), 'trading_bot.db');
 const LIVE_ANALYSIS_FILE = 'live_analysis.json';
 const LIVE_RISK_FILE = 'live_risk.json';
 const MANUAL_CLOSE_FILE = 'manual_close.json';
+const CHART_HTML_FILE = path.resolve(process.cwd(), 'chart.html');
+const CHART_IMG_FILE = path.resolve(process.cwd(), 'chart.png');
+
 
 if (!BOT_TOKEN || !CHANNEL_ID) {
     console.error("[!!!] CRITICAL: DISCORD_BOT_TOKEN or DISCORD_CHANNEL_ID is not set in the .env file.");
@@ -52,7 +57,7 @@ let db;
 let lastProcessedEventId = 0;
 const commandPrefix = "!";
 
-// --- Helper Functions ---
+// --- Helper Functions (omitted for brevity, they remain the same) ---
 async function getDbConnection() {
     if (db) return db;
     try {
@@ -105,7 +110,7 @@ function formatEventDetails(eventType, details) {
     }
 }
 
-// --- Background Tasks ---
+// --- Background Tasks (omitted for brevity, they remain the same) ---
 async function checkForEvents() {
     const channel = client.channels.cache.get(CHANNEL_ID);
     if (!channel) return;
@@ -174,7 +179,6 @@ async function sendStatusReport() {
      }
     await channel.send({ embeds: [embed] });
 }
-
 // --- Bot Events & Command Handling ---
 client.on('ready', async () => {
     console.log(`--- Discord Bot Connected ---`);
@@ -195,6 +199,7 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(commandPrefix.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
+    // Command handlers for status, panic, logs, monitor...
     if (command === 'status') {
         await message.channel.send("Fetching instant status report...");
         await sendStatusReport();
@@ -228,20 +233,12 @@ client.on('messageCreate', async (message) => {
         await message.channel.send({ embeds: [embed] });
     }
 
-    // ==========================================================
-    // /// <<<--- NEW MONITOR COMMAND ---
-    // ==========================================================
     if (command === 'monitor') {
         const riskData = await readJsonFile(LIVE_RISK_FILE);
         const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
         const localDb = await getDbConnection();
+        const embed = new EmbedBuilder().setTitle("🤖 Hyperliquid Bot Live Monitor").setColor(0x00FFFF).setTimestamp(new Date());
 
-        const embed = new EmbedBuilder()
-            .setTitle("🤖 Hyperliquid Bot Live Monitor")
-            .setColor(0x00FFFF) // Cyan
-            .setTimestamp(new Date());
-
-        // --- Risk Management Section ---
         let riskDescription = "No open positions being tracked.";
         if (riskData) {
             const { leverage } = config.trading;
@@ -264,7 +261,6 @@ Take Profit   : $${takeProfitPrice.toFixed(2)} (for ${leverage}x)
         }
         embed.addFields({ name: "🛡️ Live Position & Risk Management", value: riskDescription });
 
-        // --- Technical Analysis Section ---
         let analysisDescription = "Waiting for analysis data...";
         if (analysisData) {
             analysisDescription = `\`\`\`
@@ -275,7 +271,6 @@ WMA Fib 0 Lvl : $${analysisData.wma_fib_0.toFixed(2)}
         }
         embed.addFields({ name: "🔬 Live Technical Analysis", value: analysisDescription });
 
-        // --- Events Section ---
         if (localDb) {
             const events = await localDb.all("SELECT timestamp, event_type FROM events ORDER BY id DESC LIMIT 10");
             let eventDescription = "No events logged yet.";
@@ -287,19 +282,83 @@ WMA Fib 0 Lvl : $${analysisData.wma_fib_0.toFixed(2)}
             }
             embed.addFields({ name: "📜 Recent Events (last 10)", value: eventDescription });
         }
-
         await message.channel.send({ embeds: [embed] });
+    }
+
+    // ==========================================================
+    // /// <<<--- NEW CHART COMMAND ---
+    // ==========================================================
+    if (command === 'chart') {
+        await message.channel.send("📊 Generating live chart, please wait a moment...");
+
+        // 1. Run the chart generator script
+        exec('node src/utils/ChartGenerator.js', async (error, stdout, stderr) => {
+            if (error) {
+                console.error(`[Chart Command] Error executing script: ${error}`);
+                return message.channel.send("❌ Failed to generate chart data.");
+            }
+
+            try {
+                // 2. Launch Puppeteer to take a screenshot
+                const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+                const page = await browser.newPage();
+                await page.goto(`file://${CHART_HTML_FILE}`);
+                await page.setViewport({ width: 1200, height: 600 });
+                await page.screenshot({ path: CHART_IMG_FILE });
+                await browser.close();
+
+                // 3. Send the image to Discord
+                const file = new AttachmentBuilder(CHART_IMG_FILE);
+                const embed = new EmbedBuilder()
+                    .setTitle(`📈 Live Chart for ${config.trading.asset}`)
+                    .setImage(`attachment://${path.basename(CHART_IMG_FILE)}`)
+                    .setColor(0x7289DA)
+                    .setTimestamp(new Date());
+
+                await message.channel.send({ embeds: [embed], files: [file] });
+
+                // 4. Clean up the generated files
+                await fs.unlink(CHART_HTML_FILE);
+                await fs.unlink(CHART_IMG_FILE);
+
+            } catch (screenshotError) {
+                console.error(`[Chart Command] Error taking screenshot: ${screenshotError}`);
+                await message.channel.send("❌ An error occurred while capturing the chart image.");
+            }
+        });
     }
 
 
     if (command === 'ask') {
+        // ... ask command logic remains the same ...
         if (!geminiModel) return message.channel.send("Sorry, Master. My AI core is not configured. Please check the API key.");
         const question = args.join(' ');
         if (!question) return message.channel.send("Please ask a question, Master.");
+
         await message.channel.sendTyping();
+
         const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
-        const analysisDataStr = JSON.stringify(analysisData, null, 2);
-        const prompt = `You are a hyper-intelligent, loyal trading bot serving your "Master". Your internal sensor data is:\n\`\`\`json\n${analysisDataStr}\n\`\`\`\nYour Master has asked: "${question}"\n\nBased ONLY on the data, formulate a helpful and respectful response. Address your creator as "Master". Be conversational and interpret the data. Avoid listing exact numbers unless explicitly asked.`;
+        const riskData = await readJsonFile(LIVE_RISK_FILE);
+
+        const analysisDataStr = JSON.stringify(analysisData, null, 2) || "Not available.";
+        let positionContextStr = "I am not currently in a position.";
+        if (riskData) {
+            positionContextStr = `I am currently in a LONG position for ${riskData.asset}. My entry price was $${riskData.entryPrice.toFixed(2)}, the current price is $${riskData.currentPrice.toFixed(2)}, and my current ROE is ${riskData.roe}.`;
+        }
+
+        const prompt = `You are a hyper-intelligent, loyal trading bot serving your "Master".
+
+        This is your current operational status:
+        ${positionContextStr}
+
+        This is your internal market analysis data:
+        \`\`\`json
+        ${analysisDataStr}
+        \`\`\`
+        Your Master has asked: "${question}"
+
+        Based on your operational status AND your market analysis, formulate a helpful and respectful response. Address your creator as "Master". Be conversational and interpret the data for them. Avoid listing exact numbers unless explicitly asked.`;
+
         try {
             const result = await geminiModel.generateContent(prompt);
             const response = await result.response;

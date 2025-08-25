@@ -4,7 +4,7 @@ import 'dotenv/config';
 const config = {
     // --- ADD THIS SECTION ---
     // General Settings
-    debug: false, // Master switch for all debug features
+    debug: true, // Master switch for all debug features
 
     // Trading Parameters
     trading: {

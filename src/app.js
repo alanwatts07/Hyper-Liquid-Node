@@ -102,11 +102,14 @@ class TradingBot {
         }
     }
 
-    async managePositions() {
+     async managePositions() {
         if (!this.state.isInPosition() || !this.latestAnalysis) {
             return;
         }
+
         try {
+            // Check for manual close signal from the Discord bot
+            try {
                 const overrideData = JSON.parse(await fs.readFile('manual_close.json', 'utf8'));
                 if (overrideData.signal === 'close') {
                     logger.warn("MANUAL CLOSE DETECTED FROM DISCORD! Closing position now.");
@@ -122,18 +125,20 @@ class TradingBot {
                             this.state.setInPosition(false);
                             this.riskManager.clearPositionState(asset);
                             await fs.unlink(POSITION_FILE).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
-                            await fs.unlink('manual_close.json'); // Clean up the signal file
+                            await fs.unlink('live_risk.json').catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
+                            await fs.unlink('manual_close.json'); 
                             logger.info("Position closed successfully via manual override.");
                         }
                     }
-                    return; // Stop further processing in this cycle
+                    return; 
                 }
             } catch (error) {
                 if (error.code !== 'ENOENT') {
                     logger.error(`Error reading manual_close.json file: ${error.message}`);
                 }
             }
-        try {
+
+
             // Fetch live data FIRST. This is now our source of truth.
             const clearinghouseState = await this.tradeExecutor.getClearinghouseState();
             if (!clearinghouseState || !Array.isArray(clearinghouseState.assetPositions)) {
@@ -142,20 +147,30 @@ class TradingBot {
             }
 
             const asset = this.config.trading.asset;
-            const livePosition = clearinghouseState.assetPositions.find(p => p && p.position && p.position.coin === asset);
-            
+            const livePosition = clearinghouseState.assetPositions.find(p => p && p.position && p.position.coin === asset && Number(p.position.szi) !== 0);
+
+            // ==========================================================
+            // /// <<<--- THIS IS THE UPDATED LOGIC ---
+            // ==========================================================
             if (!livePosition) {
                 logger.warn(`Could not find live position for ${asset} on the exchange. Assuming it was closed manually.`);
                 this.state.setInPosition(false);
                 this.riskManager.clearPositionState(asset);
-                await fs.unlink(POSITION_FILE).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
-                return;
+                
+                // --- Proactive Cleanup of State Files ---
+                await fs.unlink(POSITION_FILE).catch(e => {
+                    if (e.code !== 'ENOENT') logger.error(`Failed to delete stale ${POSITION_FILE}: ${e.message}`);
+                });
+                await fs.unlink('live_risk.json').catch(e => {
+                    if (e.code !== 'ENOENT') logger.error(`Failed to delete stale live_risk.json: ${e.message}`);
+                });
+
+                logger.info("Successfully cleaned up stale position files.");
+                return; // Stop further processing as there is no position.
             }
 
             const livePositionData = livePosition.position;
             
-            // --- THIS IS THE FIX ---
-            // Create the position object for the risk check using the LIVE entry price from the exchange.
             const positionForRiskCheck = { 
                 asset: asset, 
                 entry_px: parseFloat(livePositionData.entryPx) 
@@ -171,7 +186,7 @@ class TradingBot {
 
             const riskData = {
                 asset: asset,
-                entryPrice: positionForRiskCheck.entry_px, // Now reflects the true entry price
+                entryPrice: positionForRiskCheck.entry_px, 
                 currentPrice: currentPrice,
                 roe: (livePositionData.returnOnEquity * 100).toFixed(2) + '%',
                 ...this.riskManager.positionState[asset]
@@ -184,9 +199,15 @@ class TradingBot {
                 
                 if (closeResult.success) {
                     this.state.setInPosition(false);
-                    this.riskManager.clearPositionState(asset); // Explicitly clear the risk manager's state
-                    await fs.unlink(POSITION_FILE);
-                    logger.info(`Deleted ${POSITION_FILE} after closing trade.`);
+                    this.riskManager.clearPositionState(asset); 
+                    await fs.unlink(POSITION_FILE).catch(e => {
+                        if (e.code !== 'ENOENT') logger.error(`Failed to delete ${POSITION_FILE}: ${e.message}`);
+                    });
+                    await fs.unlink('live_risk.json').catch(e => {
+                        if (e.code !== 'ENOENT') logger.error(`Failed to delete live_risk.json: ${e.message}`);
+                    });
+                    
+                    logger.info(`Cleaned up position files after closing trade.`);
                 }
             }
         } catch (error) {
