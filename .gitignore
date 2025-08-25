@@ -6,3 +6,5 @@ live_analysis.json
 package-lock.json
 node_modules/
 trading_bot.db
+analysis_data.json
+db_stream.json
