@@ -5473,3 +5473,852 @@
     }
   }
 },
+{
+  "timestamp": "2025-08-25T01:11:41.651Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:11:41.634Z",
+    "price": 204.395
+  }
+},
+{
+  "timestamp": "2025-08-25T01:11:42.050Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:11:42.031Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:10:00.000-04:00",
+        "open": 204.395,
+        "high": 204.395,
+        "low": 204.395,
+        "close": 204.395,
+        "wma_fib_0": 201.6768749999999,
+        "wma_fib_50": 204.7130208333334,
+        "atr": 0.8821428571428568,
+        "fib_entry": 200.66849062499992,
+        "latest_price": 204.395
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:12:42.080Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:12:42.050Z",
+    "price": 204.335
+  }
+},
+{
+  "timestamp": "2025-08-25T01:12:42.582Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:12:42.566Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:10:00.000-04:00",
+        "open": 204.395,
+        "high": 204.395,
+        "low": 204.335,
+        "close": 204.335,
+        "wma_fib_0": 201.6768749999999,
+        "wma_fib_50": 204.7130208333334,
+        "atr": 0.8821428571428568,
+        "fib_entry": 200.66849062499992,
+        "latest_price": 204.335
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:13:42.102Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:13:42.075Z",
+    "price": 204.565
+  }
+},
+{
+  "timestamp": "2025-08-25T01:13:42.505Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:13:42.482Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:10:00.000-04:00",
+        "open": 204.395,
+        "high": 204.565,
+        "low": 204.335,
+        "close": 204.565,
+        "wma_fib_0": 201.6768749999999,
+        "wma_fib_50": 204.7130208333334,
+        "atr": 0.894285714285713,
+        "fib_entry": 200.66849062499992,
+        "latest_price": 204.565
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:14:42.091Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:14:42.071Z",
+    "price": 204.495
+  }
+},
+{
+  "timestamp": "2025-08-25T01:14:42.429Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:14:42.410Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:10:00.000-04:00",
+        "open": 204.395,
+        "high": 204.565,
+        "low": 204.335,
+        "close": 204.495,
+        "wma_fib_0": 201.6768749999999,
+        "wma_fib_50": 204.7130208333334,
+        "atr": 0.894285714285713,
+        "fib_entry": 200.66849062499992,
+        "latest_price": 204.495
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:15:42.109Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:15:42.084Z",
+    "price": 204.445
+  }
+},
+{
+  "timestamp": "2025-08-25T01:15:42.607Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:15:42.588Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:15:00.000-04:00",
+        "open": 204.445,
+        "high": 204.445,
+        "low": 204.445,
+        "close": 204.445,
+        "wma_fib_0": 201.68249999999992,
+        "wma_fib_50": 204.75000000000003,
+        "atr": 0.8507142857142834,
+        "fib_entry": 200.67408749999993,
+        "latest_price": 204.445
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:16:42.175Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:16:42.134Z",
+    "price": 204.82
+  }
+},
+{
+  "timestamp": "2025-08-25T01:16:43.083Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:16:43.051Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:15:00.000-04:00",
+        "open": 204.445,
+        "high": 204.82,
+        "low": 204.445,
+        "close": 204.82,
+        "wma_fib_0": 201.68249999999992,
+        "wma_fib_50": 204.75000000000003,
+        "atr": 0.8739285714285684,
+        "fib_entry": 200.67408749999993,
+        "latest_price": 204.82
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:17:42.234Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:17:42.216Z",
+    "price": 204.495
+  }
+},
+{
+  "timestamp": "2025-08-25T01:17:42.591Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:17:42.567Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:15:00.000-04:00",
+        "open": 204.445,
+        "high": 204.82,
+        "low": 204.445,
+        "close": 204.495,
+        "wma_fib_0": 201.68249999999992,
+        "wma_fib_50": 204.75000000000003,
+        "atr": 0.8739285714285684,
+        "fib_entry": 200.67408749999993,
+        "latest_price": 204.495
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:18:42.164Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:18:42.135Z",
+    "price": 203.865
+  }
+},
+{
+  "timestamp": "2025-08-25T01:18:42.523Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:18:42.502Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:15:00.000-04:00",
+        "open": 204.445,
+        "high": 204.82,
+        "low": 203.865,
+        "close": 203.865,
+        "wma_fib_0": 201.68249999999992,
+        "wma_fib_50": 204.75000000000003,
+        "atr": 0.9153571428571387,
+        "fib_entry": 200.67408749999993,
+        "latest_price": 203.865
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:18:46.744Z",
+  "table": "positions",
+  "operation": "UPDATE",
+  "data": {
+    "asset": "SOL",
+    "direction": "LONG",
+    "size": 3.06,
+    "entry_px": 204.04,
+    "status": "OPEN",
+    "last_update": "2025-08-25T01:18:46.717Z"
+  }
+},
+{
+  "timestamp": "2025-08-25T01:18:46.762Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:18:46.744Z",
+    "event_type": "TRADE_EXECUTED",
+    "details": {
+      "asset": "SOL",
+      "size": 3.06,
+      "avg_px": 204.04
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:19:42.198Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:19:42.171Z",
+    "price": 204.275
+  }
+},
+{
+  "timestamp": "2025-08-25T01:19:42.597Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:19:42.568Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:15:00.000-04:00",
+        "open": 204.445,
+        "high": 204.82,
+        "low": 203.865,
+        "close": 204.275,
+        "wma_fib_0": 201.68249999999992,
+        "wma_fib_50": 204.75000000000003,
+        "atr": 0.9153571428571387,
+        "fib_entry": 200.67408749999993,
+        "latest_price": 204.275
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.67 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:20:42.322Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:20:42.298Z",
+    "price": 204.805
+  }
+},
+{
+  "timestamp": "2025-08-25T01:20:42.739Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:20:42.714Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:20:00.000-04:00",
+        "open": 204.805,
+        "high": 204.805,
+        "low": 204.805,
+        "close": 204.805,
+        "wma_fib_0": 201.68812499999993,
+        "wma_fib_50": 204.77989583333337,
+        "atr": 0.8689285714285688,
+        "fib_entry": 200.67968437499994,
+        "latest_price": 204.805
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.68 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:21:42.139Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:21:42.118Z",
+    "price": 205.305
+  }
+},
+{
+  "timestamp": "2025-08-25T01:21:42.555Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:21:42.525Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:20:00.000-04:00",
+        "open": 204.805,
+        "high": 205.305,
+        "low": 204.805,
+        "close": 205.305,
+        "wma_fib_0": 201.68812499999993,
+        "wma_fib_50": 204.77989583333337,
+        "atr": 0.9046428571428545,
+        "fib_entry": 200.67968437499994,
+        "latest_price": 205.305
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.68 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:21:46.976Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:21:46.949Z",
+    "price": 205.365
+  }
+},
+{
+  "timestamp": "2025-08-25T01:21:47.372Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:21:47.348Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:20:00.000-04:00",
+        "open": 204.805,
+        "high": 205.365,
+        "low": 204.805,
+        "close": 205.365,
+        "wma_fib_0": 201.68812499999993,
+        "wma_fib_50": 204.77989583333337,
+        "atr": 0.908928571428569,
+        "fib_entry": 200.67968437499994,
+        "latest_price": 205.365
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.68 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:22:47.397Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:22:47.366Z",
+    "price": 205.945
+  }
+},
+{
+  "timestamp": "2025-08-25T01:22:47.964Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:22:47.938Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:20:00.000-04:00",
+        "open": 204.805,
+        "high": 205.945,
+        "low": 204.805,
+        "close": 205.945,
+        "wma_fib_0": 201.68812499999993,
+        "wma_fib_50": 204.77989583333337,
+        "atr": 0.9503571428571392,
+        "fib_entry": 200.67968437499994,
+        "latest_price": 205.945
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.68 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:23:47.614Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:23:47.596Z",
+    "price": 206.925
+  }
+},
+{
+  "timestamp": "2025-08-25T01:23:47.991Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:23:47.966Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:20:00.000-04:00",
+        "open": 204.805,
+        "high": 206.925,
+        "low": 204.805,
+        "close": 206.925,
+        "wma_fib_0": 201.68812499999993,
+        "wma_fib_50": 204.77989583333337,
+        "atr": 1.0203571428571405,
+        "fib_entry": 200.67968437499994,
+        "latest_price": 206.925
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.68 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:24:47.406Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:24:47.378Z",
+    "price": 207.965
+  }
+},
+{
+  "timestamp": "2025-08-25T01:24:47.764Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:24:47.745Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:20:00.000-04:00",
+        "open": 204.805,
+        "high": 207.965,
+        "low": 204.805,
+        "close": 207.965,
+        "wma_fib_0": 201.68812499999993,
+        "wma_fib_50": 204.77989583333337,
+        "atr": 1.0946428571428544,
+        "fib_entry": 200.67968437499994,
+        "latest_price": 207.965
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.68 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:25:47.461Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:25:47.436Z",
+    "price": 208.59
+  }
+},
+{
+  "timestamp": "2025-08-25T01:25:47.807Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:25:47.788Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:25:00.000-04:00",
+        "open": 208.59,
+        "high": 208.59,
+        "low": 208.59,
+        "close": 208.59,
+        "wma_fib_0": 201.69374999999994,
+        "wma_fib_50": 204.81114583333337,
+        "atr": 1.0764285714285668,
+        "fib_entry": 200.68528124999995,
+        "latest_price": 208.59
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.69 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:26:47.417Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:26:47.388Z",
+    "price": 208.385
+  }
+},
+{
+  "timestamp": "2025-08-25T01:26:47.784Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:26:47.767Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:25:00.000-04:00",
+        "open": 208.59,
+        "high": 208.59,
+        "low": 208.385,
+        "close": 208.385,
+        "wma_fib_0": 201.69374999999994,
+        "wma_fib_50": 204.81114583333337,
+        "atr": 1.0764285714285668,
+        "fib_entry": 200.68528124999995,
+        "latest_price": 208.385
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.69 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:27:47.547Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:27:47.519Z",
+    "price": 208.725
+  }
+},
+{
+  "timestamp": "2025-08-25T01:27:47.923Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:27:47.897Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:25:00.000-04:00",
+        "open": 208.59,
+        "high": 208.725,
+        "low": 208.385,
+        "close": 208.725,
+        "wma_fib_0": 201.69374999999994,
+        "wma_fib_50": 204.81395833333337,
+        "atr": 1.0860714285714235,
+        "fib_entry": 200.68528124999995,
+        "latest_price": 208.725
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.69 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:28:21.279Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:28:21.262Z",
+    "price": 208.125
+  }
+},
+{
+  "timestamp": "2025-08-25T01:28:21.655Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:28:21.626Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:25:00.000-04:00",
+        "open": 208.59,
+        "high": 208.725,
+        "low": 208.125,
+        "close": 208.125,
+        "wma_fib_0": 201.69374999999994,
+        "wma_fib_50": 204.81395833333337,
+        "atr": 1.0860714285714235,
+        "fib_entry": 200.68528124999995,
+        "latest_price": 208.125
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.69 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:29:21.672Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:29:21.644Z",
+    "price": 208.165
+  }
+},
+{
+  "timestamp": "2025-08-25T01:29:22.051Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:29:22.035Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:25:00.000-04:00",
+        "open": 208.59,
+        "high": 208.725,
+        "low": 208.125,
+        "close": 208.165,
+        "wma_fib_0": 201.69374999999994,
+        "wma_fib_50": 204.81395833333337,
+        "atr": 1.0860714285714235,
+        "fib_entry": 200.68528124999995,
+        "latest_price": 208.165
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.69 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:29:26.215Z",
+  "table": "positions",
+  "operation": "UPDATE",
+  "data": {
+    "asset": "SOL",
+    "direction": "LONG",
+    "size": 3,
+    "entry_px": 207.7734,
+    "status": "OPEN",
+    "last_update": "2025-08-25T01:29:26.184Z"
+  }
+},
+{
+  "timestamp": "2025-08-25T01:29:26.232Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:29:26.216Z",
+    "event_type": "TRADE_EXECUTED",
+    "details": {
+      "asset": "SOL",
+      "size": 3,
+      "avg_px": 207.7734
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:29:37.578Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:29:37.551Z",
+    "event_type": "NEW_POSITION_MONITORING",
+    "details": {
+      "asset": "SOL",
+      "entry_price": 207.7734
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:30:15.506Z",
+  "table": "positions",
+  "operation": "UPDATE",
+  "data": {
+    "asset": "SOL",
+    "direction": "LONG",
+    "size": 3,
+    "entry_px": 207.7734,
+    "status": "OPEN",
+    "last_update": "2025-08-25T01:30:15.480Z"
+  }
+},
+{
+  "timestamp": "2025-08-25T01:30:15.987Z",
+  "table": "prices",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:30:15.960Z",
+    "price": 208.265
+  }
+},
+{
+  "timestamp": "2025-08-25T01:30:16.447Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:30:16.422Z",
+    "event_type": "BOT_TICK_ANALYSIS",
+    "details": {
+      "analysis": {
+        "timestamp": "2025-08-24T21:30:00.000-04:00",
+        "open": 208.265,
+        "high": 208.265,
+        "low": 208.265,
+        "close": 208.265,
+        "wma_fib_0": 201.69937499999995,
+        "wma_fib_50": 204.84802083333338,
+        "atr": 1.0039285714285657,
+        "fib_entry": 200.69087812499995,
+        "latest_price": 208.265
+      },
+      "signal": {
+        "type": "hold",
+        "reason": "Waiting for price < 200.69 to arm trigger."
+      }
+    }
+  }
+},
+{
+  "timestamp": "2025-08-25T01:30:32.361Z",
+  "table": "events",
+  "operation": "INSERT",
+  "data": {
+    "timestamp": "2025-08-25T01:30:32.336Z",
+    "event_type": "NEW_POSITION_MONITORING",
+    "details": {
+      "asset": "SOL",
+      "entry_price": 207.7734
+    }
+  }
+},

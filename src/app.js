@@ -1,4 +1,3 @@
-// src/app.js
 import config from './config.js';
 import DatabaseManager from './database/DatabaseManager.js';
 import StateManager from './components/StateManager.js';
@@ -30,7 +29,7 @@ class TradingBot {
 
     async start() {
         logger.info("========================================");
-        logger.info("      STARTING HYPERLIQUID NODE BOT     ");
+        logger.info("      STARTING HYPERLIQUID NODE BOT      ");
         logger.info("========================================");
         try {
             await this.db.connect();
@@ -56,8 +55,8 @@ class TradingBot {
             if (!this.latestAnalysis) return;
 
             let signal = this.signalGenerator.generate(this.latestAnalysis);
-            // VVVVVV --- ADD THE LOGGING CALL RIGHT HERE --- VVVVVV
-            await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal }); // <-- ADD THIS LINE
+            await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal });
+
             try {
                 const overrideData = JSON.parse(await fs.readFile('manual_override.json', 'utf8'));
                 if (overrideData.signal === 'buy') {
@@ -92,6 +91,7 @@ class TradingBot {
                     this.state.setInPosition(true);
                     this.lastTradeTime = new Date();
                     
+                    // We still write the file, but we won't rely on it for the entry price anymore.
                     await fs.writeFile(POSITION_FILE, JSON.stringify(tradeResult.filledOrder, null, 2));
                     logger.info(`Created ${POSITION_FILE} for new trade.`);
                 }
@@ -107,54 +107,63 @@ class TradingBot {
         }
 
         try {
-            // Trust the position.json file as the source of truth for the position's existence and entry data.
-            const positionFromFile = JSON.parse(await fs.readFile(POSITION_FILE, 'utf8'));
-            const positionForRiskCheck = { asset: positionFromFile.coin, entry_px: parseFloat(positionFromFile.entryPx) };
-
-            // Fetch live data ONLY for ROE and live size.
+            // Fetch live data FIRST. This is now our source of truth.
             const clearinghouseState = await this.tradeExecutor.getClearinghouseState();
             if (!clearinghouseState || !Array.isArray(clearinghouseState.assetPositions)) {
-                logger.warn("Could not get valid clearinghouse state for ROE. Skipping this check.");
+                logger.warn("Could not get valid clearinghouse state. Skipping this check.");
                 return;
             }
 
-            const livePosition = clearinghouseState.assetPositions.find(p => p && p.position && p.position.coin === positionForRiskCheck.asset);
+            const asset = this.config.trading.asset;
+            const livePosition = clearinghouseState.assetPositions.find(p => p && p.position && p.position.coin === asset);
+            
             if (!livePosition) {
-                 logger.warn(`Could not find live position details for ${positionForRiskCheck.asset} to calculate ROE. Skipping this check.`);
-                 return;
+                logger.warn(`Could not find live position for ${asset} on the exchange. Assuming it was closed manually.`);
+                this.state.setInPosition(false);
+                this.riskManager.clearPositionState(asset);
+                await fs.unlink(POSITION_FILE).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
+                return;
             }
-            const livePositionData = livePosition.position;
 
-            const currentPrice = await this.collector.getCurrentPrice(positionForRiskCheck.asset);
+            const livePositionData = livePosition.position;
+            
+            // --- THIS IS THE FIX ---
+            // Create the position object for the risk check using the LIVE entry price from the exchange.
+            const positionForRiskCheck = { 
+                asset: asset, 
+                entry_px: parseFloat(livePositionData.entryPx) 
+            };
+
+            const currentPrice = await this.collector.getCurrentPrice(asset);
             if (!currentPrice) {
-                logger.warn(`Could not fetch current price for ${positionForRiskCheck.asset}. Skipping this check.`);
+                logger.warn(`Could not fetch current price for ${asset}. Skipping this check.`);
                 return;
             }
 
             const action = await this.riskManager.checkPosition(positionForRiskCheck, livePositionData, currentPrice, this.latestAnalysis);
 
             const riskData = {
-                asset: positionForRiskCheck.asset,
-                entryPrice: positionForRiskCheck.entry_px,
+                asset: asset,
+                entryPrice: positionForRiskCheck.entry_px, // Now reflects the true entry price
                 currentPrice: currentPrice,
                 roe: (livePositionData.returnOnEquity * 100).toFixed(2) + '%',
-                ...this.riskManager.positionState[positionForRiskCheck.asset]
+                ...this.riskManager.positionState[asset]
             };
             await fs.writeFile('live_risk.json', JSON.stringify(riskData, null, 2));
 
             if (action.shouldClose) {
-                await this.notifier.send(`${action.reason} Hit!`, `Closing position for ${positionForRiskCheck.asset}. Trigger Value: ${action.value}`, "warning");
-                const closeResult = await this.tradeExecutor.closePosition(positionForRiskCheck.asset, Number(livePositionData.szi));
+                await this.notifier.send(`${action.reason} Hit!`, `Closing position for ${asset}. Trigger Value: ${action.value}`, "warning");
+                const closeResult = await this.tradeExecutor.closePosition(asset, Number(livePositionData.szi));
                 
                 if (closeResult.success) {
                     this.state.setInPosition(false);
-                    // Cooldown is NOT set on close
+                    this.riskManager.clearPositionState(asset); // Explicitly clear the risk manager's state
                     await fs.unlink(POSITION_FILE);
                     logger.info(`Deleted ${POSITION_FILE} after closing trade.`);
                 }
             }
         } catch (error) {
-             if (error.code !== 'ENOENT') {
+            if (error.code !== 'ENOENT') {
                 logger.error(`Error in managePositions loop: ${error.message}`);
             }
         }
