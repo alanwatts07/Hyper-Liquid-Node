@@ -159,8 +159,9 @@ class TradingBot {
                 if (closeResult.success) {
                     this.state.setInPosition(false);
                     this.riskManager.clearPositionState(asset); // Explicitly clear the risk manager's state
-                    await fs.unlink(POSITION_FILE);
-                    logger.info(`Deleted ${POSITION_FILE} after closing trade.`);
+                    await fs.unlink(POSITION_FILE).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
+                    await fs.unlink('live_risk.json').catch(e => { if (e.code !== 'ENOENT') logger.error(e); }); // <-- ADD THIS LINE
+                    logger.info(`Deleted ${POSITION_FILE} and risk after closing trade.`);
                 }
             }
         } catch (error) {
