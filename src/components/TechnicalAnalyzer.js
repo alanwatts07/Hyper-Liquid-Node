@@ -58,8 +58,8 @@ class TechnicalAnalyzer {
 
 
     calculate(historicalData) {
-        const { fibLookback, wmaPeriod, atrPeriod } = this.config.ta;
-        const minRecords = fibLookback + wmaPeriod;
+        const { fibLookback, wmaPeriod, atrPeriod, stoch } = this.config.ta;
+        const minRecords = Math.max(fibLookback + wmaPeriod, stoch.rsiPeriod + stoch.stochPeriod);
 
         if (!historicalData || historicalData.length < minRecords) {
             logger.warn(`Not enough historical data. Need >= ${minRecords}, have ${historicalData.length}.`);
@@ -77,6 +77,8 @@ class TechnicalAnalyzer {
             let highestHighs = [];
             let lowestLows = [];
             let trueRanges = [];
+            const closes = ohlc.map(c => c.close);
+            const { rsi, stochRSI } = this.calculateStochRSI(closes, stoch.rsiPeriod, stoch.stochPeriod, stoch.kPeriod, stoch.dPeriod);
 
             for (let i = 0; i < ohlc.length; i++) {
                 // Calculate Highest High
@@ -135,11 +137,12 @@ class TechnicalAnalyzer {
                     wma_fib_0: wma_fib_0_values[i],
                     wma_fib_50: wma_fib_50_values[i],
                     atr: atr_values[i],
+                    stoch_rsi: stochRSI[i]
                 });
             }
 
 
-            const completeResults = results.filter(r => !isNaN(r.wma_fib_0) && !isNaN(r.atr));
+            const completeResults = results.filter(r => !isNaN(r.wma_fib_0) && !isNaN(r.atr) && r.stoch_rsi);
             if (completeResults.length === 0) {
                 logger.warn("No valid analysis after manual calculations. Bot needs more data.");
                 return null;
@@ -171,6 +174,88 @@ class TechnicalAnalyzer {
             console.error(error.stack);
             return null;
         }
+    }
+
+    calculateRSI(prices, period) {
+        let gains = [];
+        let losses = [];
+
+        for (let i = 1; i < prices.length; i++) {
+            let change = prices[i] - prices[i - 1];
+            if (change > 0) {
+                gains.push(change);
+                losses.push(0);
+            } else {
+                gains.push(0);
+                losses.push(Math.abs(change));
+            }
+        }
+
+        let avgGain = [];
+        let avgLoss = [];
+        let rsi = [];
+
+        // Calculate initial averages
+        let firstAvgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
+        let firstAvgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
+        avgGain.push(firstAvgGain);
+        avgLoss.push(firstAvgLoss);
+
+        // Calculate subsequent averages and RSI
+        for (let i = period; i < gains.length; i++) {
+            let currentAvgGain = (avgGain[avgGain.length - 1] * (period - 1) + gains[i]) / period;
+            let currentAvgLoss = (avgLoss[avgLoss.length - 1] * (period - 1) + losses[i]) / period;
+            avgGain.push(currentAvgGain);
+            avgLoss.push(currentAvgLoss);
+        }
+
+        for (let i = 0; i < avgGain.length; i++) {
+            let rs = avgGain[i] / avgLoss[i];
+            rsi.push(100 - (100 / (1 + rs)));
+        }
+
+        // Pad the beginning of the RSI array with nulls to match the original price array length
+        const rsiPadding = Array(prices.length - rsi.length).fill(null);
+        return rsiPadding.concat(rsi);
+    }
+
+    calculateStochRSI(prices, rsiPeriod, stochPeriod, kPeriod, dPeriod) {
+        const rsi = this.calculateRSI(prices, rsiPeriod);
+        let stochRSI = [];
+
+        for (let i = rsiPeriod; i < rsi.length; i++) {
+            if (i < rsiPeriod + stochPeriod - 1) {
+                stochRSI.push(null);
+                continue;
+            }
+
+            const rsiSlice = rsi.slice(i - stochPeriod + 1, i + 1);
+            const lowestRSI = Math.min(...rsiSlice);
+            const highestRSI = Math.max(...rsiSlice);
+            const currentRSI = rsi[i];
+
+            // --- THIS IS THE CORRECTED LINE ---
+            let stoch = ((currentRSI - lowestRSI) / (highestRSI - lowestRSI)) * 100;
+            
+            if (isNaN(stoch) || !isFinite(stoch)) {
+                stoch = stochRSI[stochRSI.length - 1] ? stochRSI[stochRSI.length - 1].stoch : 50; // Default to 50 if NaN
+            }
+            stochRSI.push({ stoch });
+        }
+
+        const k = simpleMovingAverage(stochRSI.map(s => s ? s.stoch : NaN), kPeriod);
+        const d = simpleMovingAverage(k, dPeriod);
+
+        for (let i = 0; i < stochRSI.length; i++) {
+            if (stochRSI[i]) {
+                stochRSI[i].k = k[i];
+                stochRSI[i].d = d[i];
+            }
+        }
+        
+        // Pad the beginning of the array with nulls to match the original price array length
+        const padding = Array(prices.length - stochRSI.length).fill(null);
+        return { rsi, stochRSI: padding.concat(stochRSI) };
     }
 }
 

@@ -28,6 +28,12 @@ const config = {
         wmaPeriod: 24,
         fibEntryOffsetPct: 0.005,
         resetPctAboveFib0: 0.005,
+        stoch: {
+            rsiPeriod: 14,
+            stochPeriod: 14,
+            kPeriod: 3,
+            dPeriod: 3
+        }
     },
 
     // Data Collection

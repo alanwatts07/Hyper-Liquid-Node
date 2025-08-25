@@ -1,3 +1,5 @@
+// src/app.js
+
 import config from './config.js';
 import DatabaseManager from './database/DatabaseManager.js';
 import StateManager from './components/StateManager.js';
@@ -55,6 +57,13 @@ class TradingBot {
             }
             if (!this.latestAnalysis) return;
 
+            // Example of how to access the latest Stoch RSI values
+            if(this.latestAnalysis.stoch_rsi) {
+                const { k, d } = this.latestAnalysis.stoch_rsi;
+                logger.info(`Stoch RSI: K=${k.toFixed(2)}, D=${d.toFixed(2)}`);
+            }
+
+
             let signal = this.signalGenerator.generate(this.latestAnalysis);
             await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal });
 
@@ -63,7 +72,9 @@ class TradingBot {
                 if (overrideData.signal === 'buy') {
                     logger.warn("MANUAL OVERRIDE DETECTED! Forcing a 'buy' signal.");
                     signal = { type: 'buy' };
-                    await this.notifier.send("Manual Override Triggered!", "Forcing a buy signal for testing.", "warning");
+                    // Example of including Stoch RSI in a notification
+                    const stochMessage = this.latestAnalysis.stoch_rsi ? `\nStoch RSI: K=${this.latestAnalysis.stoch_rsi.k.toFixed(2)}, D=${this.latestAnalysis.stoch_rsi.d.toFixed(2)}` : '';
+                    await this.notifier.send("Manual Override Triggered!", `Forcing a buy signal for testing.${stochMessage}`, "warning");
                     await fs.unlink('manual_override.json');
                 }
             } catch (error) {
@@ -189,7 +200,8 @@ class TradingBot {
                 entryPrice: positionForRiskCheck.entry_px, 
                 currentPrice: currentPrice,
                 roe: (livePositionData.returnOnEquity * 100).toFixed(2) + '%',
-                ...this.riskManager.positionState[asset]
+                ...this.riskManager.positionState[asset],
+                stoch_rsi: this.latestAnalysis.stoch_rsi
             };
             await fs.writeFile('live_risk.json', JSON.stringify(riskData, null, 2));
 

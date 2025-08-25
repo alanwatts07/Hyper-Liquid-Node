@@ -59,10 +59,20 @@ async function generateChart() {
         value: d.wma_fib_50
     })).filter(d => d.value);
 
+    const stochRSIKData = analysisData.map(d => ({
+        time: Math.floor(new Date(d.timestamp).getTime() / 1000),
+        value: d.stoch_rsi ? d.stoch_rsi.k : null
+    })).filter(d => d.value);
+
+    const stochRSIDData = analysisData.map(d => ({
+        time: Math.floor(new Date(d.timestamp).getTime() / 1000),
+        value: d.stoch_rsi ? d.stoch_rsi.d : null
+    })).filter(d => d.value);
+
     const eventMarkers = extractMarkersFromEvents(eventData);
 
     console.log('[ChartGenerator] Generating chart HTML...');
-    const chartHtml = createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data);
+    const chartHtml = createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data, stochRSIKData, stochRSIDData);
 
     fs.writeFileSync(CHART_OUTPUT_FILE, chartHtml);
     console.log(`\n[ChartGenerator] ✅ Chart generated successfully!`);
@@ -101,15 +111,15 @@ function extractMarkersFromEvents(events) {
         }));
 }
 
-function createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data) {
+function createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data, stochRSIKData, stochRSIDData) {
      const dom = new JSDOM(`
         <!DOCTYPE html>
         <html>
         <head>
             <title>Trading Bot Chart</title>
             <style>
-                body { margin: 0; padding: 0; background-color: #1a1e26; }
-                #chart-container { width: 1200px; height: 600px; }
+                body { margin: 0; padding: 0; background-color: #1a1e26; color: #d1d4dc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; }
+                #chart-container { position: relative; width: 1200px; height: 750px; }
             </style>
         </head>
         <body>
@@ -125,24 +135,56 @@ function createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data) {
             const chartElement = document.getElementById('chart-container');
             const chart = LightweightCharts.createChart(chartElement, {
                 width: 1200,
-                height: 600,
+                height: 750,
                 layout: { textColor: 'white', background: { type: 'solid', color: '#1a1e26' } },
                 grid: { vertLines: { color: '#2e333e' }, horzLines: { color: '#2e333e' } },
                 timeScale: { timeVisible: true, secondsVisible: false },
             });
-            const candleSeries = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderVisible: false, wickUpColor: '#26a69a', wickDownColor: '#ef5350' });
+            const candleSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderVisible: false,
+                wickUpColor: '#26a69a',
+                wickDownColor: '#ef5350'
+            });
             candleSeries.setData(${JSON.stringify(ohlcData)});
             if (${wmaFib0Data.length > 0}) {
-                const wma0Series = chart.addLineSeries({ color: '#ffc107', lineWidth: 2 });
+                const wma0Series = chart.addLineSeries({ color: '#ffc107', lineWidth: 2, priceScaleId: 'right' });
                 wma0Series.setData(${JSON.stringify(wmaFib0Data)});
             }
             if (${wmaFib50Data.length > 0}) {
-                const wma50Series = chart.addLineSeries({ color: '#2962FF', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed });
+                const wma50Series = chart.addLineSeries({ color: '#2962FF', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, priceScaleId: 'right' });
                 wma50Series.setData(${JSON.stringify(wmaFib50Data)});
             }
             if (${eventMarkers.length > 0}) {
                 candleSeries.setMarkers(${JSON.stringify(eventMarkers)});
             }
+
+            if (${stochRSIKData.length > 0}) {
+                const stochRsiPane = chart.addHistogramSeries({
+                    priceFormat: {
+                        type: 'volume',
+                    },
+                    priceScaleId: 'stoch_rsi',
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                });
+                
+                chart.priceScale('stoch_rsi').applyOptions({
+                    scaleMargins: {
+                        top: 0.8,
+                        bottom: 0,
+                    },
+                });
+
+                const stochRSIKSeries = chart.addLineSeries({ color: '#2962FF', lineWidth: 2, priceScaleId: 'stoch_rsi' });
+                stochRSIKSeries.setData(${JSON.stringify(stochRSIKData)});
+
+                const stochRSIDSeries = chart.addLineSeries({ color: '#FF6D00', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, priceScaleId: 'stoch_rsi' });
+                stochRSIDSeries.setData(${JSON.stringify(stochRSIDData)});
+            }
+
+
             chart.timeScale().fitContent();
         } catch (e) {
             console.error('Error rendering chart script:', e);
