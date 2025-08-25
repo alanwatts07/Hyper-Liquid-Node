@@ -5,7 +5,6 @@ import fs from 'fs/promises';
 const POSITION_FILE = 'position.json';
 
 class StateManager {
-    // ... constructor is the same ...
     constructor(db, tradeExecutor) {
         this.db = db;
         this.tradeExecutor = tradeExecutor;
@@ -22,12 +21,10 @@ class StateManager {
             const openPositions = clearinghouseState.assetPositions.filter(p => p && p.position && Number(p.position.szi) !== 0);
 
             if (openPositions.length > 0) {
-                // --- FIX: Save the entire position object to the file ---
                 const livePosition = openPositions[0].position;
                 logger.warn(`Found existing open position for ${livePosition.coin}! Creating ${POSITION_FILE}.`);
                 await fs.writeFile(POSITION_FILE, JSON.stringify(livePosition, null, 2));
-                
-                // Update the DB with the key info
+
                 await this.db.updatePosition(livePosition.coin, Number(livePosition.szi) > 0 ? "LONG" : "SHORT", Math.abs(Number(livePosition.szi)), Number(livePosition.entryPx), "OPEN");
                 this.state.inPosition = true;
 
@@ -53,10 +50,12 @@ class StateManager {
         }
     }
 
-    // ... rest of the file is the same ...
     isInPosition() { return this.state.inPosition; }
     setInPosition(status) { this.state.inPosition = status; }
-    isTriggerArmed() { return this.state.isTriggerArmed; }
+
+    // --- THIS IS THE CORRECTED FUNCTION ---
+    isTriggerArmed() { return this.state.triggerArmed; } // FIX: Was this.state.isTriggerArmed
+
     setTriggerArmed(status) {
         if (this.state.triggerArmed !== status) {
             this.state.triggerArmed = status;

@@ -1,7 +1,13 @@
-// src/components/TechnicalAnalyzer.js --- FINAL WORKING VERSION ---
-import * as dfd from 'danfojs-node';
+// src/components/TechnicalAnalyzer.js
+
+import fs from 'fs'; // --- ADDED ---
+import path from 'path'; // --- ADDED ---
 import { DateTime } from 'luxon';
 import logger from '../utils/logger.js';
+
+// --- ADDED ---
+// Define a path for the analysis output file
+const ANALYSIS_OUTPUT_FILE = path.resolve(process.cwd(), 'analysis_data.json');
 
 // A simple helper function for calculating a moving average
 function simpleMovingAverage(data, windowSize) {
@@ -38,7 +44,7 @@ class TechnicalAnalyzer {
         const ohlcData = Object.keys(grouped).map(key => {
             const prices = grouped[key];
             return {
-                timestamp: new Date(key),
+                timestamp: key, // Use ISO string for JSON compatibility
                 open: prices[0],
                 high: Math.max(...prices),
                 low: Math.min(...prices),
@@ -47,7 +53,7 @@ class TechnicalAnalyzer {
         });
 
         if (ohlcData.length === 0) return [];
-        return ohlcData.sort((a, b) => a.timestamp - b.timestamp);
+        return ohlcData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     }
 
     calculate(historicalData) {
@@ -99,7 +105,7 @@ class TechnicalAnalyzer {
                 }
                 
                 // Calculate True Range (for ATR)
-                 if (i === 0) {
+                if (i === 0) {
                     trueRanges.push(ohlc[i].high - ohlc[i].low);
                 } else {
                     const tr1 = ohlc[i].high - ohlc[i].low;
@@ -119,8 +125,12 @@ class TechnicalAnalyzer {
             // --- Combine and get the latest complete record ---
             const results = [];
             for (let i = 0; i < ohlc.length; i++) {
-                 results.push({
-                    ...ohlc[i],
+                results.push({
+                    timestamp: ohlc[i].timestamp,
+                    open: ohlc[i].open,
+                    high: ohlc[i].high,
+                    low: ohlc[i].low,
+                    close: ohlc[i].close,
                     wma_fib_0: wma_fib_0_values[i],
                     wma_fib_50: wma_fib_50_values[i],
                     atr: atr_values[i],
@@ -133,9 +143,15 @@ class TechnicalAnalyzer {
                 return null;
             }
 
+            // --- ADDED: Save the complete analysis data for charting ---
+            try {
+                fs.writeFileSync(ANALYSIS_OUTPUT_FILE, JSON.stringify(completeResults, null, 2));
+            } catch (err) {
+                logger.error(`Failed to write analysis data to file: ${err.message}`);
+            }
+
+            // The function still returns the latest analysis for the bot's live logic
             const latest = completeResults[completeResults.length - 1];
-            
-            // Final calculation for fib_entry
             const fib_entry = latest.wma_fib_0 * (1 - this.config.ta.fibEntryOffsetPct);
 
             return {
@@ -146,7 +162,7 @@ class TechnicalAnalyzer {
 
         } catch (error) {
             logger.error(`CRITICAL ERROR during technical analysis: ${error.message}`);
-            console.error(error.stack); // Print the full error stack
+            console.error(error.stack);
             return null;
         }
     }

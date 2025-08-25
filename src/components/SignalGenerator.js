@@ -1,68 +1,51 @@
-// src/components/SignalGenerator.js
 import logger from '../utils/logger.js';
 
 class SignalGenerator {
     constructor(config, db, state, notifier) {
         this.config = config;
         this.db = db;
-        this.state = state;
+        this.state = state; // this.state is the StateManager instance
         this.notifier = notifier;
     }
 
-    /**
-     * Generates a trade signal based on the latest analysis and current state.
-     * @param {Object} analysis - The analysis object from TechnicalAnalyzer.
-     * @returns {Object} A signal object, e.g., { type: 'buy' } or { type: 'hold' }.
-     */
     generate(analysis) {
-        // Default signal is to do nothing.
-        let signal = { type: 'hold' };
+        const currentPrice = analysis.latest_price;
+        const { fib_entry, wma_fib_0 } = analysis;
 
-        // If analysis is null (e.g., not enough data), we can't do anything.
-        if (!analysis) {
-            return signal;
+        // --- FINAL CORRECTED LOGIC ---
+
+        // 1. Check conditions if the trigger is NOT currently armed
+        if (!this.state.isTriggerArmed()) {
+            // ARM condition: Price drops BELOW our desired entry zone.
+            if (currentPrice < fib_entry) {
+                this.state.setTriggerArmed(true);
+                const message = `BUY TRIGGER ARMED. Price ${currentPrice.toFixed(2)} is below entry level ${fib_entry.toFixed(2)}. Waiting for bounce above buy level > ${wma_fib_0.toFixed(2)}.`;
+                logger.info(message);
+                this.notifier.send("Trigger Armed", message, "info");
+                return { type: 'hold', reason: 'Trigger has been armed.' };
+            }
+            // If not armed and condition isn't met, just wait.
+            return { type: 'hold', reason: `Waiting for price < ${fib_entry.toFixed(2)} to arm trigger.` };
         }
 
-        const { wma_fib_0, fib_entry, latest_price } = analysis;
-        const { resetPctAboveFib0 } = this.config.ta;
-
-        // --- Trading Logic ---
-        // We only generate signals if we are NOT currently in a position.
-        if (!this.state.isInPosition()) {
-            const resetThreshold = wma_fib_0 * (1 + resetPctAboveFib0);
-
-            // Condition to DISARM the trigger: Price moves too high above the Fib 0 line.
-            if (latest_price > resetThreshold) {
-                if (this.state.isTriggerArmed()) {
-                    this.state.setTriggerArmed(false);
-                    this.notifier.send("Trigger DISARMED", `Price ($${latest_price.toFixed(2)}) crossed above reset threshold ($${resetThreshold.toFixed(2)})`, "warning");
-                    this.db.logEvent("TRIGGER_DISARMED", { savant_data: analysis });
-                }
-            }
-            // Condition to ARM the trigger: Price drops below the fib_entry level.
-            else if (latest_price < fib_entry) {
-                if (!this.state.isTriggerArmed()) {
-                    this.state.setTriggerArmed(true);
-                    this.notifier.send("Trigger ARMED!", `Price ($${latest_price.toFixed(2)}) is below entry level ($${fib_entry.toFixed(2)})`, "info");
-                    this.db.logEvent("TRIGGER_ARMED", { savant_data: analysis });
-                }
+        // 2. Check conditions if the trigger IS currently armed
+        if (this.state.isTriggerArmed()) {
+            // BUY Condition: Price has bounced back up and crossed ABOVE our target buy level.
+            if (currentPrice > wma_fib_0) {
+                this.state.setTriggerArmed(false); // DISARM ONLY WHEN THE TRADE IS MADE.
+                const message = `BUY SIGNAL! Price ${currentPrice.toFixed(2)} is > WMA_Fib_0 ${wma_fib_0.toFixed(2)}.`;
+                logger.info(`🟢 ${message}`);
+                this.notifier.send("🔥 BUY SIGNAL 🔥", message, "success");
+                return { type: 'buy', reason: message };
             }
 
-            // BUY SIGNAL Condition: The trigger must be armed AND the price must cross back above the wma_fib_0 level.
-            if (this.state.isTriggerArmed() && latest_price > wma_fib_0) {
-                logger.success(`BUY SIGNAL DETECTED: Price ($${latest_price.toFixed(2)}) > Fib 0 ($${wma_fib_0.toFixed(2)}) with trigger armed.`);
-                
-                signal = { type: 'buy' };
-                
-                this.notifier.send("🚀 BUY SIGNAL!", `Price ($${latest_price.toFixed(2)}) crossed above Fib 0 with trigger armed.`, "success");
-                this.db.logEvent("BUY_SIGNAL", { savant_data: analysis });
-
-                // Disarm the trigger after firing to prevent immediate re-entry.
-                this.state.setTriggerArmed(false);
-            }
+            // If still armed but the buy condition is not met, we simply wait.
+            // There is no other way to disarm the trigger.
+            return { type: 'hold', reason: `Trigger is armed. Waiting for price > ${wma_fib_0.toFixed(2)}.` };
         }
 
-        return signal;
+        // Default case, should not be reached but good for safety
+        return { type: 'hold', reason: 'No signal conditions met.' };
     }
 }
 
