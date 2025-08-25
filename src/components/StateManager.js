@@ -3,10 +3,11 @@ import logger from '../utils/logger.js';
 import fs from 'fs/promises';
 
 const POSITION_FILE = 'position.json';
+const RISK_FILE = 'live_risk.json'; // <-- 1. ADD THIS LINE
 
 class StateManager {
-    // ... constructor is the same ...
     constructor(db, tradeExecutor) {
+        //... constructor is the same
         this.db = db;
         this.tradeExecutor = tradeExecutor;
         this.state = { inPosition: false, triggerArmed: false };
@@ -15,25 +16,28 @@ class StateManager {
     async loadInitialState() {
         logger.info("StateManager: Loading initial state from Hyperliquid exchange...");
         try {
+            //... logic to check for open positions is the same ...
             const clearinghouseState = await this.tradeExecutor.getClearinghouseState();
             if (!clearinghouseState || !Array.isArray(clearinghouseState.assetPositions)) {
                 throw new Error("Could not fetch valid asset position data.");
             }
             const openPositions = clearinghouseState.assetPositions.filter(p => p && p.position && Number(p.position.szi) !== 0);
 
+
             if (openPositions.length > 0) {
-                // --- FIX: Save the entire position object to the file ---
+                // ... this part remains the same ...
                 const livePosition = openPositions[0].position;
                 logger.warn(`Found existing open position for ${livePosition.coin}! Creating ${POSITION_FILE}.`);
                 await fs.writeFile(POSITION_FILE, JSON.stringify(livePosition, null, 2));
-                
-                // Update the DB with the key info
+
                 await this.db.updatePosition(livePosition.coin, Number(livePosition.szi) > 0 ? "LONG" : "SHORT", Math.abs(Number(livePosition.szi)), Number(livePosition.entryPx), "OPEN");
                 this.state.inPosition = true;
 
             } else {
-                logger.info(`No open positions found on exchange. Ensuring ${POSITION_FILE} is deleted.`);
-                await this.deletePositionFile();
+                 // --- 2. THIS IS THE KEY CHANGE ---
+                logger.info(`No open positions found on exchange. Ensuring local state files are deleted.`);
+                await this.deleteFile(POSITION_FILE);
+                await this.deleteFile(RISK_FILE); // <-- ADD THIS LINE
                 this.state.inPosition = false;
             }
         } catch (error) {
@@ -43,20 +47,25 @@ class StateManager {
         this.state.triggerArmed = false;
     }
 
-    async deletePositionFile() {
+    // --- 3. RENAME THIS FUNCTION FOR CLARITY ---
+    async deleteFile(fileName) {
         try {
-            await fs.unlink(POSITION_FILE);
+            await fs.unlink(fileName);
         } catch (error) {
             if (error.code !== 'ENOENT') {
-                logger.error(`Error deleting ${POSITION_FILE}: ${error.message}`);
+                logger.error(`Error deleting ${fileName}: ${error.message}`);
             }
         }
     }
-
     // ... rest of the file is the same ...
     isInPosition() { return this.state.inPosition; }
     setInPosition(status) { this.state.inPosition = status; }
+<<<<<<< HEAD
     isTriggerArmed() { return this.state.triggerArmed; } // FIX: Was this.state.isTriggerArmed    setTriggerArmed(status) {
+=======
+    isTriggerArmed() { return this.state.triggerArmed; }
+    setTriggerArmed(status) {
+>>>>>>> feature/chart
         if (this.state.triggerArmed !== status) {
             this.state.triggerArmed = status;
             logger.info(`StateManager: Trigger has been ${status ? 'ARMED' : 'DISARMED'}.`);

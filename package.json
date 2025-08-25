@@ -17,6 +17,8 @@
     "danfojs-node": "^1.1.2",
     "dotenv": "^16.4.5",
     "ethers": "^5.7.2",
+    "jsdom": "^26.1.0",
+    "lightweight-charts": "^5.0.8",
     "luxon": "^3.4.4",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"

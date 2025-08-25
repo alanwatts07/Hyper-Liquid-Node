@@ -15,7 +15,8 @@ const POSITION_FILE = 'position.json';
 class TradingBot {
     constructor() {
         this.config = config;
-        this.db = new DatabaseManager(this.config.database.file);
+// This is the correct line
+        this.db = new DatabaseManager(this.config.database.file, this.config);        
         this.collector = new DataCollector(this.config);
         this.tradeExecutor = new TradeExecutor(this.config, this.db, this.collector);
         this.state = new StateManager(this.db, this.tradeExecutor);
@@ -158,8 +159,14 @@ class TradingBot {
                 if (closeResult.success) {
                     this.state.setInPosition(false);
                     this.riskManager.clearPositionState(asset); // Explicitly clear the risk manager's state
+<<<<<<< HEAD
                     await fs.unlink(POSITION_FILE);
                     logger.info(`Deleted ${POSITION_FILE} after closing trade.`);
+=======
+                    await fs.unlink(POSITION_FILE).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
+                    await fs.unlink('live_risk.json').catch(e => { if (e.code !== 'ENOENT') logger.error(e); }); // <-- ADD THIS LINE
+                    logger.info(`Deleted ${POSITION_FILE} and risk after closing trade.`);
+>>>>>>> feature/chart
                 }
             }
         } catch (error) {

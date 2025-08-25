@@ -2,6 +2,10 @@
 import 'dotenv/config';
 
 const config = {
+    // --- ADD THIS SECTION ---
+    // General Settings
+    debug: false, // Master switch for all debug features
+
     // Trading Parameters
     trading: {
         asset: "SOL",
@@ -34,7 +38,7 @@ const config = {
     // Discord Notifications
     discord: {
         webhookUrl: process.env.DISCORD_WEBHOOK_URL,
-        botName: "Hyperliquid Bot",
+        botName: "Bot 1 Hyperliquid",
     },
 
     // Database

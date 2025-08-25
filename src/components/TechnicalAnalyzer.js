@@ -1,9 +1,13 @@
-// src/components/TechnicalAnalyzer.js --- FINAL WORKING VERSION ---
-import * as dfd from 'danfojs-node';
+// src/components/TechnicalAnalyzer.js
+
+import fs from 'fs';
+import path from 'path';
 import { DateTime } from 'luxon';
 import logger from '../utils/logger.js';
 
-// A simple helper function for calculating a moving average
+const ANALYSIS_OUTPUT_FILE = path.resolve(process.cwd(), 'analysis_data.json');
+
+// ... (simpleMovingAverage function remains the same) ...
 function simpleMovingAverage(data, windowSize) {
     let result = [];
     for (let i = 0; i < data.length; i++) {
@@ -20,11 +24,13 @@ function simpleMovingAverage(data, windowSize) {
     return result;
 }
 
+
 class TechnicalAnalyzer {
     constructor(config) {
         this.config = config;
     }
 
+    // ... (resampleToOHLC function remains the same) ...
     resampleToOHLC(historicalData) {
         const grouped = {};
         historicalData.forEach(d => {
@@ -38,7 +44,7 @@ class TechnicalAnalyzer {
         const ohlcData = Object.keys(grouped).map(key => {
             const prices = grouped[key];
             return {
-                timestamp: new Date(key),
+                timestamp: key, // Use ISO string for JSON compatibility
                 open: prices[0],
                 high: Math.max(...prices),
                 low: Math.min(...prices),
@@ -47,8 +53,9 @@ class TechnicalAnalyzer {
         });
 
         if (ohlcData.length === 0) return [];
-        return ohlcData.sort((a, b) => a.timestamp - b.timestamp);
+        return ohlcData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     }
+
 
     calculate(historicalData) {
         const { fibLookback, wmaPeriod, atrPeriod } = this.config.ta;
@@ -66,7 +73,7 @@ class TechnicalAnalyzer {
                 return null;
             }
 
-            // --- Manual Rolling Calculations ---
+            // ... (all manual calculation loops remain the same) ...
             let highestHighs = [];
             let lowestLows = [];
             let trueRanges = [];
@@ -99,7 +106,7 @@ class TechnicalAnalyzer {
                 }
                 
                 // Calculate True Range (for ATR)
-                 if (i === 0) {
+                if (i === 0) {
                     trueRanges.push(ohlc[i].high - ohlc[i].low);
                 } else {
                     const tr1 = ohlc[i].high - ohlc[i].low;
@@ -119,13 +126,18 @@ class TechnicalAnalyzer {
             // --- Combine and get the latest complete record ---
             const results = [];
             for (let i = 0; i < ohlc.length; i++) {
-                 results.push({
-                    ...ohlc[i],
+                results.push({
+                    timestamp: ohlc[i].timestamp,
+                    open: ohlc[i].open,
+                    high: ohlc[i].high,
+                    low: ohlc[i].low,
+                    close: ohlc[i].close,
                     wma_fib_0: wma_fib_0_values[i],
                     wma_fib_50: wma_fib_50_values[i],
                     atr: atr_values[i],
                 });
             }
+
 
             const completeResults = results.filter(r => !isNaN(r.wma_fib_0) && !isNaN(r.atr));
             if (completeResults.length === 0) {
@@ -133,9 +145,19 @@ class TechnicalAnalyzer {
                 return null;
             }
 
+            // --- MODIFIED SECTION ---
+            // Only write the analysis file if debug mode is enabled in the config
+            if (this.config.debug) {
+                try {
+                    fs.writeFileSync(ANALYSIS_OUTPUT_FILE, JSON.stringify(completeResults, null, 2));
+                    logger.info(`Debug mode is ON. Analysis data saved to ${ANALYSIS_OUTPUT_FILE}`);
+                } catch (err) {
+                    logger.error(`Failed to write analysis data to file: ${err.message}`);
+                }
+            }
+
+            // The function still returns the latest analysis for the bot's live logic
             const latest = completeResults[completeResults.length - 1];
-            
-            // Final calculation for fib_entry
             const fib_entry = latest.wma_fib_0 * (1 - this.config.ta.fibEntryOffsetPct);
 
             return {
@@ -146,7 +168,7 @@ class TechnicalAnalyzer {
 
         } catch (error) {
             logger.error(`CRITICAL ERROR during technical analysis: ${error.message}`);
-            console.error(error.stack); // Print the full error stack
+            console.error(error.stack);
             return null;
         }
     }
