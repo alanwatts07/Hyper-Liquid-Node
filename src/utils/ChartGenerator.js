@@ -77,13 +77,17 @@ function resampleToOHLC(data) {
         if (!grouped[key]) grouped[key] = [];
         grouped[key].push(d.price);
     });
-    return Object.keys(grouped).map(key => ({
-        time: Math.floor(DateTime.fromISO(key).toSeconds()),
-        open: prices[0],
-        high: Math.max(...prices),
-        low: Math.min(...prices),
-        close: prices[prices.length - 1],
-    })).sort((a, b) => a.time - b.time);
+    // --- THIS IS THE CORRECTED BLOCK ---
+    return Object.keys(grouped).map(key => {
+        const prices = grouped[key]; // <-- This line was missing
+        return {
+            time: Math.floor(DateTime.fromISO(key).toSeconds()),
+            open: prices[0],
+            high: Math.max(...prices),
+            low: Math.min(...prices),
+            close: prices[prices.length - 1],
+        };
+    }).sort((a, b) => a.time - b.time);
 }
 
 function extractMarkersFromEvents(events) {

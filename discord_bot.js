@@ -288,46 +288,46 @@ WMA Fib 0 Lvl : $${analysisData.wma_fib_0.toFixed(2)}
     // ==========================================================
     // /// <<<--- NEW CHART COMMAND ---
     // ==========================================================
-    if (command === 'chart') {
-        await message.channel.send("📊 Generating live chart, please wait a moment...");
+   if (command === 'chart') {
+    await message.channel.send("📊 Generating live chart, please wait a moment...");
 
-        // 1. Run the chart generator script
-        exec('node src/utils/ChartGenerator.js', async (error, stdout, stderr) => {
-            if (error) {
-                console.error(`[Chart Command] Error executing script: ${error}`);
-                return message.channel.send("❌ Failed to generate chart data.");
-            }
+    // 1. Run the chart generator script to create chart.html
+    exec('node src/utils/ChartGenerator.js', async (error, stdout, stderr) => {
+        if (error) {
+            console.error(`[Chart Command] Error executing script: ${error}`);
+            return message.channel.send("❌ Failed to generate chart data.");
+        }
 
-            try {
-                // 2. Launch Puppeteer to take a screenshot
-                const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-                const page = await browser.newPage();
-                await page.goto(`file://${CHART_HTML_FILE}`);
-                await page.setViewport({ width: 1200, height: 600 });
-                await page.screenshot({ path: CHART_IMG_FILE });
-                await browser.close();
+        try {
+            // 2. Launch Puppeteer to take a screenshot
+            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+            const page = await browser.newPage();
+            // Go to the locally generated HTML file
+            await page.goto(`file://${CHART_HTML_FILE}`);
+            await page.setViewport({ width: 1200, height: 600 });
+            await page.screenshot({ path: CHART_IMG_FILE });
+            await browser.close();
 
-                // 3. Send the image to Discord
-                const file = new AttachmentBuilder(CHART_IMG_FILE);
-                const embed = new EmbedBuilder()
-                    .setTitle(`📈 Live Chart for ${config.trading.asset}`)
-                    .setImage(`attachment://${path.basename(CHART_IMG_FILE)}`)
-                    .setColor(0x7289DA)
-                    .setTimestamp(new Date());
+            // 3. Send the image to Discord
+            const file = new AttachmentBuilder(CHART_IMG_FILE);
+            const embed = new EmbedBuilder()
+                .setTitle(`📈 Live Chart for ${config.trading.asset}`)
+                .setImage(`attachment://${path.basename(CHART_IMG_FILE)}`)
+                .setColor(0x7289DA)
+                .setTimestamp(new Date());
 
-                await message.channel.send({ embeds: [embed], files: [file] });
+            await message.channel.send({ embeds: [embed], files: [file] });
 
-                // 4. Clean up the generated files
-                await fs.unlink(CHART_HTML_FILE);
-                await fs.unlink(CHART_IMG_FILE);
+            // 4. Clean up BOTH generated files
+            await fs.unlink(CHART_HTML_FILE);
+            await fs.unlink(CHART_IMG_FILE);
 
-            } catch (screenshotError) {
-                console.error(`[Chart Command] Error taking screenshot: ${screenshotError}`);
-                await message.channel.send("❌ An error occurred while capturing the chart image.");
-            }
-        });
-    }
-
+        } catch (screenshotError) {
+            console.error(`[Chart Command] Error during screenshot process: ${screenshotError}`);
+            await message.channel.send("❌ An error occurred while capturing the chart image.");
+        }
+    });
+}
 
     if (command === 'ask') {
         // ... ask command logic remains the same ...
