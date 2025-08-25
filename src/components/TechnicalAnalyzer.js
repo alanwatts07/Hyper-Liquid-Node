@@ -1,15 +1,13 @@
 // src/components/TechnicalAnalyzer.js
 
-import fs from 'fs'; // --- ADDED ---
-import path from 'path'; // --- ADDED ---
+import fs from 'fs';
+import path from 'path';
 import { DateTime } from 'luxon';
 import logger from '../utils/logger.js';
 
-// --- ADDED ---
-// Define a path for the analysis output file
 const ANALYSIS_OUTPUT_FILE = path.resolve(process.cwd(), 'analysis_data.json');
 
-// A simple helper function for calculating a moving average
+// ... (simpleMovingAverage function remains the same) ...
 function simpleMovingAverage(data, windowSize) {
     let result = [];
     for (let i = 0; i < data.length; i++) {
@@ -26,11 +24,13 @@ function simpleMovingAverage(data, windowSize) {
     return result;
 }
 
+
 class TechnicalAnalyzer {
     constructor(config) {
         this.config = config;
     }
 
+    // ... (resampleToOHLC function remains the same) ...
     resampleToOHLC(historicalData) {
         const grouped = {};
         historicalData.forEach(d => {
@@ -56,6 +56,7 @@ class TechnicalAnalyzer {
         return ohlcData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     }
 
+
     calculate(historicalData) {
         const { fibLookback, wmaPeriod, atrPeriod } = this.config.ta;
         const minRecords = fibLookback + wmaPeriod;
@@ -72,7 +73,7 @@ class TechnicalAnalyzer {
                 return null;
             }
 
-            // --- Manual Rolling Calculations ---
+            // ... (all manual calculation loops remain the same) ...
             let highestHighs = [];
             let lowestLows = [];
             let trueRanges = [];
@@ -137,17 +138,22 @@ class TechnicalAnalyzer {
                 });
             }
 
+
             const completeResults = results.filter(r => !isNaN(r.wma_fib_0) && !isNaN(r.atr));
             if (completeResults.length === 0) {
                 logger.warn("No valid analysis after manual calculations. Bot needs more data.");
                 return null;
             }
 
-            // --- ADDED: Save the complete analysis data for charting ---
-            try {
-                fs.writeFileSync(ANALYSIS_OUTPUT_FILE, JSON.stringify(completeResults, null, 2));
-            } catch (err) {
-                logger.error(`Failed to write analysis data to file: ${err.message}`);
+            // --- MODIFIED SECTION ---
+            // Only write the analysis file if debug mode is enabled in the config
+            if (this.config.debug) {
+                try {
+                    fs.writeFileSync(ANALYSIS_OUTPUT_FILE, JSON.stringify(completeResults, null, 2));
+                    logger.info(`Debug mode is ON. Analysis data saved to ${ANALYSIS_OUTPUT_FILE}`);
+                } catch (err) {
+                    logger.error(`Failed to write analysis data to file: ${err.message}`);
+                }
             }
 
             // The function still returns the latest analysis for the bot's live logic

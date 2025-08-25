@@ -1,14 +1,26 @@
+// src/components/DatabaseManager.js
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import logger from '../utils/logger.js';
-import DatabaseStreamer from '../utils/DatabaseStreamer.js'; // <-- IMPORT
+import DatabaseStreamer from '../utils/DatabaseStreamer.js';
 
 class DatabaseManager {
-    constructor(dbFile) {
+    /**
+     * @param {string} dbFile - The path to the SQLite database file.
+     * @param {Object} config - The global application configuration object.
+     */
+    constructor(dbFile, config) { // <-- ADD config HERE
         this.dbFile = dbFile;
+        this.config = config; // <-- STORE THE CONFIG
         this.db = null;
-        // The log file will be named 'db_stream.json' in your project's root folder
-        this.streamer = new DatabaseStreamer('db_stream.json'); // <-- INITIALIZE
+        this.streamer = null; // <-- Initialize streamer to null
+
+        // --- MODIFIED SECTION ---
+        // Only initialize the streamer if debug mode is enabled
+        if (this.config.debug) {
+            this.streamer = new DatabaseStreamer('db_stream.json');
+            logger.info("Debug mode is ON. Database changes will be streamed to db_stream.json");
+        }
     }
 
     /**
@@ -70,8 +82,11 @@ class DatabaseManager {
                 'INSERT OR IGNORE INTO prices (timestamp, price) VALUES (?, ?)',
                 [timestamp, price]
             );
-            // STREAM THE CHANGE
-            this.streamer.logChange('prices', 'INSERT', priceData);
+            // --- MODIFIED SECTION ---
+            // Only stream the change if the streamer was initialized
+            if (this.streamer) {
+                this.streamer.logChange('prices', 'INSERT', priceData);
+            }
         } catch (error) {
             logger.error(`Error saving price data: ${error.message}`);
         }
@@ -114,8 +129,10 @@ class DatabaseManager {
                     last_update = excluded.last_update;
             `, [asset, direction, size, entry_px, status, timestamp]);
             logger.info(`Position updated for ${asset}: ${status}`);
-            // STREAM THE CHANGE
-            this.streamer.logChange('positions', 'UPDATE', positionData);
+            // --- MODIFIED SECTION ---
+            if (this.streamer) {
+                this.streamer.logChange('positions', 'UPDATE', positionData);
+            }
         } catch (error) {
             logger.error(`Error updating position for ${asset}: ${error.message}`);
         }
@@ -149,8 +166,10 @@ class DatabaseManager {
                 'INSERT INTO events (timestamp, event_type, details) VALUES (?, ?, ?)',
                 [timestamp, eventType, detailsJson]
             );
-            // STREAM THE CHANGE
-            this.streamer.logChange('events', 'INSERT', eventData);
+            // --- MODIFIED SECTION ---
+            if (this.streamer) {
+                this.streamer.logChange('events', 'INSERT', eventData);
+            }
         } catch (error) {
             logger.error(`Error logging event ${eventType}: ${error.message}`);
         }

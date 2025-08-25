@@ -15,7 +15,8 @@ const POSITION_FILE = 'position.json';
 class TradingBot {
     constructor() {
         this.config = config;
-        this.db = new DatabaseManager(this.config.database.file);
+// This is the correct line
+        this.db = new DatabaseManager(this.config.database.file, this.config);        
         this.collector = new DataCollector(this.config);
         this.tradeExecutor = new TradeExecutor(this.config, this.db, this.collector);
         this.state = new StateManager(this.db, this.tradeExecutor);
