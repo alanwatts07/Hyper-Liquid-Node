@@ -65,7 +65,13 @@ class TradingBot {
 
 
             let signal = this.signalGenerator.generate(this.latestAnalysis);
-            await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal });
+            
+            // --- MODIFIED LINE ---
+            // Only log the tick analysis if the debug flag is enabled
+            if (this.config.debug.logTickAnalysis) {
+                await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal });
+            }
+
 
             try {
                 const overrideData = JSON.parse(await fs.readFile('manual_override.json', 'utf8'));

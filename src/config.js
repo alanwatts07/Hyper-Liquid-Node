@@ -4,7 +4,10 @@ import 'dotenv/config';
 const config = {
     // --- ADD THIS SECTION ---
     // General Settings
-    debug: true, // Master switch for all debug features
+    debug: {
+        enabled: true, // Master switch for all debug features
+        logTickAnalysis: false, // <-- ADD THIS LINE: Set to false to disable logging every tick
+    },
 
     // Trading Parameters
     trading: {

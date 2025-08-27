@@ -39,7 +39,7 @@ class SignalGenerator {
                 
                 // --- ADDED THIS FINAL CHECK ---
                 // Also check if both Stoch RSI lines are below 60 to confirm momentum isn't exhausted.
-                if (stoch_rsi.k < 60 && stoch_rsi.d < 60) {
+                if (stoch_rsi.k < 80 && stoch_rsi.d < 80) {
                     this.state.setTriggerArmed(false); // Disarm after the successful trade signal.
                     const message = `BUY SIGNAL! Price > WMA_Fib_0 AND Stoch RSI K/D (${stoch_rsi.k.toFixed(2)}/${stoch_rsi.d.toFixed(2)}) < 60.`;
                     logger.info(`🟢 ${message}`);
