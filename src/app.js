@@ -99,7 +99,15 @@ class TradingBot {
                         return;
                     }
                 }
-
+                // --- DYNAMIC TAKE-PROFIT LOGIC ---
+                let currentRiskConfig = { ...this.config.risk }; // Copy original config
+                if (!this.latestAnalysis.bull_state) {
+                    logger.warn("DOWNTREND DETECTED (4hr): Setting take-profit to 25% for this trade.");
+                    currentRiskConfig.takeProfitPercentage = 0.25; // 25%
+                } else {
+                    logger.info("UPTREND DETECTED (4hr): Using default take-profit settings.");
+                }
+                // --- END DYNAMIC TAKE-PROFIT ---
                 const tradeResult = await this.tradeExecutor.executeBuy(
                     this.config.trading.asset,
                     this.config.trading.tradeUsdSize
@@ -198,16 +206,19 @@ class TradingBot {
                 logger.warn(`Could not fetch current price for ${asset}. Skipping this check.`);
                 return;
             }
-
+            
             const action = await this.riskManager.checkPosition(positionForRiskCheck, livePositionData, currentPrice, this.latestAnalysis);
 
-            const riskData = {
+             const riskData = {
                 asset: asset,
-                entryPrice: positionForRiskCheck.entry_px, 
+                entryPrice: positionForRiskCheck.entry_px,
                 currentPrice: currentPrice,
                 roe: (livePositionData.returnOnEquity * 100).toFixed(2) + '%',
                 ...this.riskManager.positionState[asset],
-                stoch_rsi: this.latestAnalysis.stoch_rsi
+                stoch_rsi: this.latestAnalysis.stoch_rsi,
+                // --- ADD THESE TWO LINES ---
+                bull_state: this.latestAnalysis.bull_state,
+                stoch_rsi_4hr: this.latestAnalysis.stoch_rsi_4hr
             };
             await fs.writeFile('live_risk.json', JSON.stringify(riskData, null, 2));
 

@@ -10,13 +10,26 @@ class SignalGenerator {
 
     generate(analysis) {
         const currentPrice = analysis.latest_price;
-        const { fib_entry, wma_fib_0, stoch_rsi } = analysis;
+        // --- FIX: Add stoch_rsi_4hr and bull_state to the destructuring ---
+        const { fib_entry, wma_fib_0, stoch_rsi, stoch_rsi_4hr, bull_state } = analysis;
 
-        // --- Safety Check ---
-        // Ensure we have Stochastic RSI data before proceeding
+        // --- Safety Checks ---
         if (!stoch_rsi || typeof stoch_rsi.k === 'undefined' || typeof stoch_rsi.d === 'undefined') {
             return { type: 'hold', reason: 'Waiting for Stochastic RSI data to be calculated.' };
         }
+        
+        // NEW: 4-hour Stoch RSI check
+        if (!stoch_rsi_4hr || typeof stoch_rsi_4hr.k === 'undefined') {
+            return { type: 'hold', reason: 'Waiting for 4-hour Stochastic RSI data.' };
+        }
+
+        // NEW: Prevent trades if 4hr Stoch is too high
+        if (stoch_rsi_4hr.k > 80 || stoch_rsi_4hr.d > 80) {
+            const reason = `HOLD: 4-hour Stoch RSI is too high (K: ${stoch_rsi_4hr.k.toFixed(2)}, D: ${stoch_rsi_4hr.d.toFixed(2)}).`;
+            logger.info(reason);
+            return { type: 'hold', reason: reason };
+        }
+
 
         // 1. Check conditions if the trigger is NOT currently armed
         if (!this.state.isTriggerArmed()) {

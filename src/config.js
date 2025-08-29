@@ -36,7 +36,18 @@ const config = {
             stochPeriod: 14,
             kPeriod: 3,
             dPeriod: 3
+        },
+         // ADD THIS NEW SECTION
+        fourHour: {
+            trendMaPeriod: 20, // Moving average period for 4hr trend
+            stoch: {
+                rsiPeriod: 14,
+                stochPeriod: 14,
+                kPeriod: 3,
+                dPeriod: 3
+            }
         }
+
     },
 
     // Data Collection

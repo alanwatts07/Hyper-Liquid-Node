@@ -66,10 +66,15 @@ class RiskManager {
                 await this.db.logEvent("FIB_STOP_HIT", { asset, current_price: currentPrice, stop_price: state.stopPrice, roe, entry_price: entry_px });
                 return { shouldClose: true, reason: "FIB-STOP", value: state.stopPrice };
             }
+        // This is the corrected code
         } else {
             logger.info(`RiskManager: Checking Fixed Stop for ${asset}. ROE: ${(roe * 100).toFixed(2)}%, Trigger: -${(stopLossPercentage * 100).toFixed(2)}%`);
             if (roe <= -stopLossPercentage) {
                 logger.warn(`STOP-LOSS HIT for ${asset}! ROE: ${(roe * 100).toFixed(2)}% <= -${(stopLossPercentage * 100).toFixed(2)}%`);
+                
+                // --- ADD THIS LINE ---
+                await this.db.logEvent("STOP-LOSS HIT", { asset, reason: "STOP-LOSS", value: `${(roe * 100).toFixed(2)}%` });
+                
                 return { shouldClose: true, reason: "STOP-LOSS", value: `${(roe * 100).toFixed(2)}%` };
             }
         }

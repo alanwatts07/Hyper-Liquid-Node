@@ -56,11 +56,66 @@ class TechnicalAnalyzer {
         return ohlcData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     }
 
+    resampleToOHLC_4hr(historicalData) {
+        const grouped = {};
+        historicalData.forEach(d => {
+            const dt = DateTime.fromISO(d.timestamp);
+            const hour = dt.hour - (dt.hour % 4); // Group by 4-hour blocks
+            const key = dt.set({ hour, minute: 0, second: 0, millisecond: 0 }).toISO();
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(d.price);
+        });
+
+        const ohlcData = Object.keys(grouped).map(key => {
+            const prices = grouped[key];
+            return {
+                timestamp: key,
+                open: prices[0],
+                high: Math.max(...prices),
+                low: Math.min(...prices),
+                close: prices[prices.length - 1],
+            };
+        });
+
+        if (ohlcData.length === 0) return [];
+        return ohlcData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    }
 
     calculate(historicalData) {
         const { fibLookback, wmaPeriod, atrPeriod, stoch } = this.config.ta;
         const minRecords = Math.max(fibLookback + wmaPeriod, stoch.rsiPeriod + stoch.stochPeriod);
+        // --- 4-HOUR ANALYSIS ---
+        const { trendMaPeriod, stoch: stoch4hr } = this.config.ta.fourHour;
+        const ohlc4hr = this.resampleToOHLC_4hr(historicalData);
+        logger.info(`[Analysis Debug] Generated ${ohlc4hr.length} four-hour candles. (Need at least ${trendMaPeriod})`);
+        let bull_state = false;
+        let stoch_rsi_4hr = null;
 
+        if (ohlc4hr.length >= trendMaPeriod) {
+            const closes4hr = ohlc4hr.map(c => c.close);
+            const trendMa = simpleMovingAverage(closes4hr, trendMaPeriod);
+            const latestClose4hr = closes4hr[closes4hr.length - 1];
+            const latestTrendMa = trendMa[trendMa.length - 1];
+
+            if (latestClose4hr > latestTrendMa) {
+                bull_state = true;
+            }
+
+            const { stochRSI } = this.calculateStochRSI(closes4hr, stoch4hr.rsiPeriod, stoch4hr.stochPeriod, stoch4hr.kPeriod, stoch4hr.dPeriod);
+             // --- THIS IS THE MODIFIED PART ---
+        if (stochRSI.length > 0) {
+            const latestStoch4hr = stochRSI[stochRSI.length - 1];
+            // Add a check to ensure K and D are valid numbers before assigning
+            if (latestStoch4hr && typeof latestStoch4hr.k === 'number' && typeof latestStoch4hr.d === 'number' && !isNaN(latestStoch4hr.k) && !isNaN(latestStoch4hr.d)) {
+                stoch_rsi_4hr = latestStoch4hr;
+            }
+            // Add this new, more detailed log
+            logger.info(`[Analysis Debug] Latest 4hr Stoch Object: ${JSON.stringify(latestStoch4hr)}`);
+        }
+    }
+    // --- END OF MODIFIED PART ---
+        
+        // --- END 4-HOUR ANALYSIS ---
         if (!historicalData || historicalData.length < minRecords) {
             logger.warn(`Not enough historical data. Need >= ${minRecords}, have ${historicalData.length}.`);
             return null;
@@ -167,6 +222,8 @@ class TechnicalAnalyzer {
                 ...latest,
                 fib_entry,
                 latest_price: latest.close,
+                bull_state: bull_state, // <-- ADD THIS
+                stoch_rsi_4hr: stoch_rsi_4hr // <-- ADD THIS
             };
 
         } catch (error) {
