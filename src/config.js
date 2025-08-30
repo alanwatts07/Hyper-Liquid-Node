@@ -12,8 +12,8 @@ const config = {
     // Trading Parameters
     trading: {
         asset: "SOL",
-        tradeUsdSize: 625,
-        leverage: 20,
+        tradeUsdSize: 360,
+        leverage: 12,
         slippage: 0.01,
         cooldownMinutes: 10,
     },

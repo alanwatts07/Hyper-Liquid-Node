@@ -1,5 +1,4 @@
 // src/app.js
-
 import config from './config.js';
 import DatabaseManager from './database/DatabaseManager.js';
 import StateManager from './components/StateManager.js';
@@ -17,7 +16,6 @@ const POSITION_FILE = 'position.json';
 class TradingBot {
     constructor() {
         this.config = config;
-// This is the correct line
         this.db = new DatabaseManager(this.config.database.file, this.config);        
         this.collector = new DataCollector(this.config);
         this.tradeExecutor = new TradeExecutor(this.config, this.db, this.collector);
@@ -57,28 +55,22 @@ class TradingBot {
             }
             if (!this.latestAnalysis) return;
 
-            // Example of how to access the latest Stoch RSI values
             if(this.latestAnalysis.stoch_rsi) {
                 const { k, d } = this.latestAnalysis.stoch_rsi;
                 logger.info(`Stoch RSI: K=${k.toFixed(2)}, D=${d.toFixed(2)}`);
             }
 
-
             let signal = this.signalGenerator.generate(this.latestAnalysis);
             
-            // --- MODIFIED LINE ---
-            // Only log the tick analysis if the debug flag is enabled
             if (this.config.debug.logTickAnalysis) {
                 await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal });
             }
-
 
             try {
                 const overrideData = JSON.parse(await fs.readFile('manual_override.json', 'utf8'));
                 if (overrideData.signal === 'buy') {
                     logger.warn("MANUAL OVERRIDE DETECTED! Forcing a 'buy' signal.");
                     signal = { type: 'buy' };
-                    // Example of including Stoch RSI in a notification
                     const stochMessage = this.latestAnalysis.stoch_rsi ? `\nStoch RSI: K=${this.latestAnalysis.stoch_rsi.k.toFixed(2)}, D=${this.latestAnalysis.stoch_rsi.d.toFixed(2)}` : '';
                     await this.notifier.send("Manual Override Triggered!", `Forcing a buy signal for testing.${stochMessage}`, "warning");
                     await fs.unlink('manual_override.json');
@@ -99,15 +91,9 @@ class TradingBot {
                         return;
                     }
                 }
-                // --- DYNAMIC TAKE-PROFIT LOGIC ---
-                let currentRiskConfig = { ...this.config.risk }; // Copy original config
-                if (!this.latestAnalysis.bull_state) {
-                    logger.warn("DOWNTREND DETECTED (4hr): Setting take-profit to 25% for this trade.");
-                    currentRiskConfig.takeProfitPercentage = 0.25; // 25%
-                } else {
-                    logger.info("UPTREND DETECTED (4hr): Using default take-profit settings.");
-                }
-                // --- END DYNAMIC TAKE-PROFIT ---
+
+                // --- THIS SECTION IS NOW CLEANER ---
+                // The old logic for setting a temporary risk config has been removed.
                 const tradeResult = await this.tradeExecutor.executeBuy(
                     this.config.trading.asset,
                     this.config.trading.tradeUsdSize
@@ -116,8 +102,6 @@ class TradingBot {
                 if (tradeResult.success) {
                     this.state.setInPosition(true);
                     this.lastTradeTime = new Date();
-                    
-                    // We still write the file, but we won't rely on it for the entry price anymore.
                     await fs.writeFile(POSITION_FILE, JSON.stringify(tradeResult.filledOrder, null, 2));
                     logger.info(`Created ${POSITION_FILE} for new trade.`);
                 }
@@ -128,12 +112,14 @@ class TradingBot {
     }
 
      async managePositions() {
+        // --- THIS SECTION IS NOW CLEANER ---
+        // The old logic for resetting the risk config has been removed.
         if (!this.state.isInPosition() || !this.latestAnalysis) {
             return;
         }
 
         try {
-            // Check for manual close signal from the Discord bot
+            // ... (manual close logic remains the same)
             try {
                 const overrideData = JSON.parse(await fs.readFile('manual_close.json', 'utf8'));
                 if (overrideData.signal === 'close') {
@@ -163,8 +149,7 @@ class TradingBot {
                 }
             }
 
-
-            // Fetch live data FIRST. This is now our source of truth.
+            // ... (the rest of the function remains the same)
             const clearinghouseState = await this.tradeExecutor.getClearinghouseState();
             if (!clearinghouseState || !Array.isArray(clearinghouseState.assetPositions)) {
                 logger.warn("Could not get valid clearinghouse state. Skipping this check.");
@@ -174,24 +159,18 @@ class TradingBot {
             const asset = this.config.trading.asset;
             const livePosition = clearinghouseState.assetPositions.find(p => p && p.position && p.position.coin === asset && Number(p.position.szi) !== 0);
 
-            // ==========================================================
-            // /// <<<--- THIS IS THE UPDATED LOGIC ---
-            // ==========================================================
             if (!livePosition) {
                 logger.warn(`Could not find live position for ${asset} on the exchange. Assuming it was closed manually.`);
                 this.state.setInPosition(false);
-                this.riskManager.clearPositionState(asset);
-                
-                // --- Proactive Cleanup of State Files ---
+                this.riskManager.clearPositionState(asset); 
                 await fs.unlink(POSITION_FILE).catch(e => {
                     if (e.code !== 'ENOENT') logger.error(`Failed to delete stale ${POSITION_FILE}: ${e.message}`);
                 });
                 await fs.unlink('live_risk.json').catch(e => {
                     if (e.code !== 'ENOENT') logger.error(`Failed to delete stale live_risk.json: ${e.message}`);
                 });
-
                 logger.info("Successfully cleaned up stale position files.");
-                return; // Stop further processing as there is no position.
+                return;
             }
 
             const livePositionData = livePosition.position;
@@ -206,19 +185,20 @@ class TradingBot {
                 logger.warn(`Could not fetch current price for ${asset}. Skipping this check.`);
                 return;
             }
-            
+
             const action = await this.riskManager.checkPosition(positionForRiskCheck, livePositionData, currentPrice, this.latestAnalysis);
 
-             const riskData = {
+            const riskData = {
                 asset: asset,
-                entryPrice: positionForRiskCheck.entry_px,
+                entryPrice: positionForRiskCheck.entry_px, 
                 currentPrice: currentPrice,
                 roe: (livePositionData.returnOnEquity * 100).toFixed(2) + '%',
                 ...this.riskManager.positionState[asset],
                 stoch_rsi: this.latestAnalysis.stoch_rsi,
-                // --- ADD THESE TWO LINES ---
                 bull_state: this.latestAnalysis.bull_state,
-                stoch_rsi_4hr: this.latestAnalysis.stoch_rsi_4hr
+                stoch_rsi_4hr: this.latestAnalysis.stoch_rsi_4hr,
+                liveTakeProfitPercentage: action.liveTakeProfitPercentage,
+                liveStopLossPercentage: action.liveStopLossPercentage
             };
             await fs.writeFile('live_risk.json', JSON.stringify(riskData, null, 2));
 
@@ -235,7 +215,6 @@ class TradingBot {
                     await fs.unlink('live_risk.json').catch(e => {
                         if (e.code !== 'ENOENT') logger.error(`Failed to delete live_risk.json: ${e.message}`);
                     });
-                    
                     logger.info(`Cleaned up position files after closing trade.`);
                 }
             }
