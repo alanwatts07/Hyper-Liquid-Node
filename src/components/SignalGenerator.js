@@ -39,16 +39,26 @@ class SignalGenerator {
             return { type: 'hold', reason };
         }
 
-        // --- Blocker 2: 4-Hour Price Trend ---
+        // ==========================================================
+        // /// <<<--- THIS IS THE MODIFIED LOGIC ---
+        // ==========================================================
+        // --- Blocker 2: 4-Hour Price Trend (with new exception) ---
         if (tradeBlockers.blockOnPriceTrend && !bull_state) {
-            const reason = `HOLD (BLOCKER): 4hr price trend is bearish.`;
-            logger.info(reason);
-            // --- 2. Add database event log ---
-            await this.db.logEvent('TRADE_BLOCKED', { 
-                reason: '4hr_trend_bearish', 
-                bull_state: bull_state 
-            });
-            return { type: 'hold', reason };
+            // EXCEPTION: If the trend is down BUT the 4hr stoch is deeply oversold, allow the trade.
+            if (stoch_rsi_4hr.k < 20 && stoch_rsi_4hr.d < 20) {
+                logger.info(`TRADE PERMITTED (OVERRIDE): Trend is bearish, but 4hr Stoch is oversold (K:${stoch_rsi_4hr.k.toFixed(2)}), allowing potential reversal entry.`);
+            } else {
+                // If the trend is down and we are NOT oversold, block the trade.
+                const reason = `HOLD (BLOCKER): 4hr price trend is bearish and Stoch is not oversold.`;
+                logger.info(reason);
+                await this.db.logEvent('TRADE_BLOCKED', { 
+                    reason: '4hr_trend_bearish_not_oversold', 
+                    bull_state: bull_state,
+                    k_4hr: stoch_rsi_4hr.k,
+                    d_4hr: stoch_rsi_4hr.d
+                });
+                return { type: 'hold', reason };
+            }
         }
 
         // --- Standard Arm/Disarm Logic (no changes here) ---
