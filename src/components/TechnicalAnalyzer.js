@@ -24,6 +24,29 @@ function simpleMovingAverage(data, windowSize) {
     return result;
 }
 
+// NEW: Exponential Moving Average function
+function exponentialMovingAverage(data, period) {
+    const multiplier = 2 / (period + 1);
+    let result = [];
+    
+    for (let i = 0; i < data.length; i++) {
+        if (isNaN(data[i])) {
+            result.push(NaN);
+            continue;
+        }
+        
+        if (i === 0 || isNaN(result[i - 1])) {
+            // First valid value becomes the initial EMA
+            result.push(data[i]);
+        } else {
+            // EMA = (Current Value × Multiplier) + (Previous EMA × (1 - Multiplier))
+            const ema = (data[i] * multiplier) + (result[i - 1] * (1 - multiplier));
+            result.push(ema);
+        }
+    }
+    
+    return result;
+}
 
 class TechnicalAnalyzer {
     constructor(config) {
@@ -173,8 +196,8 @@ class TechnicalAnalyzer {
                 }
             }
             
-            // --- Manual Moving Average Calculations ---
-            const wma_fib_0_values = simpleMovingAverage(lowestLows, wmaPeriod);
+            // --- MODIFIED: EMA instead of SMA for fib_0 (keeping original variable names) ---
+            const wma_fib_0_values = exponentialMovingAverage(lowestLows, wmaPeriod);
             const fib_50_range = highestHighs.map((h, i) => (h - lowestLows[i]) * 0.5);
             const fib_50_base = highestHighs.map((h, i) => h - fib_50_range[i]);
             const wma_fib_50_values = simpleMovingAverage(fib_50_base, wmaPeriod);
@@ -189,13 +212,12 @@ class TechnicalAnalyzer {
                     high: ohlc[i].high,
                     low: ohlc[i].low,
                     close: ohlc[i].close,
-                    wma_fib_0: wma_fib_0_values[i],
+                    wma_fib_0: wma_fib_0_values[i], // Uses EMA but keeps original name
                     wma_fib_50: wma_fib_50_values[i],
                     atr: atr_values[i],
                     stoch_rsi: stochRSI[i]
                 });
             }
-
 
             const completeResults = results.filter(r => !isNaN(r.wma_fib_0) && !isNaN(r.atr) && r.stoch_rsi);
             if (completeResults.length === 0) {
@@ -216,7 +238,7 @@ class TechnicalAnalyzer {
 
             // The function still returns the latest analysis for the bot's live logic
             const latest = completeResults[completeResults.length - 1];
-            const fib_entry = latest.wma_fib_0 * (1 - this.config.ta.fibEntryOffsetPct);
+            const fib_entry = latest.wma_fib_0 * (1 - this.config.ta.fibEntryOffsetPct); // Back to using wma_fib_0 name
 
             return {
                 ...latest,

@@ -11,6 +11,7 @@ class SignalGenerator {
 
     // --- 1. Make the function async ---
     async generate(analysis) {
+        // Back to original variable names (wma_fib_0 uses EMA under the hood)
         const { latest_price, fib_entry, wma_fib_0, stoch_rsi, stoch_rsi_4hr, bull_state } = analysis;
         const { tradeBlockers } = this.config.trading; // Get the new blocker settings
 
@@ -73,9 +74,9 @@ class SignalGenerator {
             return { type: 'hold', reason: `Waiting for price < ${fib_entry.toFixed(2)} to arm trigger.` };
         }
 
-        // --- Buy Condition Logic ---
+        // --- Buy Condition Logic (Original variable names, EMA under the hood) ---
         if (this.state.isTriggerArmed()) {
-            // Buy condition: Price has bounced above our target level.
+            // Buy condition: Price has bounced above the base fib_0 level (now using EMA)
             if (latest_price > wma_fib_0) {
 
                 // --- Blocker 3: 5-Minute Stochastic RSI ---
@@ -96,7 +97,7 @@ class SignalGenerator {
 
                 // If we get to this point, all enabled blockers and conditions have been passed.
                 this.state.setTriggerArmed(false);
-                const message = `BUY SIGNAL! Price > WMA_Fib_0 and all blockers passed.`;
+                const message = `BUY SIGNAL! Price > WMA_Fib_0 (${wma_fib_0.toFixed(2)}) and all blockers passed.`;
                 logger.info(`🟢 ${message}`);
                 this.notifier.send("🔥 BUY SIGNAL 🔥", message, "success");
                 return { type: 'buy', reason: message };

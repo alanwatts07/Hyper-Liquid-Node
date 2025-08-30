@@ -49,6 +49,7 @@ async function generateChart() {
         console.warn(`\n[ChartGenerator] ⚠️ WARNING: Could not read ${ANALYSIS_DATA_FILE}.`);
     }
 
+    // Back to original variable names (wma_fib_0 uses EMA under the hood)
     const wmaFib0Data = analysisData.map(d => ({
         time: Math.floor(new Date(d.timestamp).getTime() / 1000),
         value: d.wma_fib_0
@@ -72,6 +73,7 @@ async function generateChart() {
     const eventMarkers = extractMarkersFromEvents(eventData);
 
     console.log('[ChartGenerator] Generating chart HTML...');
+    // Back to original parameter name
     const chartHtml = createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data, stochRSIKData, stochRSIDData);
 
     fs.writeFileSync(CHART_OUTPUT_FILE, chartHtml);
@@ -111,6 +113,7 @@ function extractMarkersFromEvents(events) {
         }));
 }
 
+// Back to original parameter names
 function createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data, stochRSIKData, stochRSIDData) {
      const dom = new JSDOM(`
         <!DOCTYPE html>
@@ -148,6 +151,7 @@ function createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data, stoc
                 wickDownColor: '#ef5350'
             });
             candleSeries.setData(${JSON.stringify(ohlcData)});
+            // Back to original variable names in chart code
             if (${wmaFib0Data.length > 0}) {
                 const wma0Series = chart.addLineSeries({ color: '#ffc107', lineWidth: 2, priceScaleId: 'right' });
                 wma0Series.setData(${JSON.stringify(wmaFib0Data)});
@@ -183,7 +187,6 @@ function createChartHtml(ohlcData, eventMarkers, wmaFib0Data, wmaFib50Data, stoc
                 const stochRSIDSeries = chart.addLineSeries({ color: '#FF6D00', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, priceScaleId: 'stoch_rsi' });
                 stochRSIDSeries.setData(${JSON.stringify(stochRSIDData)});
             }
-
 
             chart.timeScale().fitContent();
         } catch (e) {
