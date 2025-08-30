@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0",
     "@google/generative-ai": "^0.24.1",
     "@nktkas/hyperliquid": "latest",
     "axios": "^1.7.2",

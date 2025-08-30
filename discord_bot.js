@@ -10,11 +10,12 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import config from './src/config.js';
 import { exec } from 'child_process'; // For running scripts
 import puppeteer from 'puppeteer';   // For screenshots
+import Anthropic from '@anthropic-ai/sdk'; // <-- 1. IMPORT CLAUDE'S SDK
 
 // --- Configuration ---
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY; // <-- 2. ENSURE THIS IS IN YOUR .env
 const DB_FILE = path.resolve(process.cwd(), 'trading_bot.db');
 const LIVE_ANALYSIS_FILE = 'live_analysis.json';
 const LIVE_RISK_FILE = 'live_risk.json';
@@ -28,22 +29,24 @@ if (!BOT_TOKEN || !CHANNEL_ID) {
     process.exit(1);
 }
 
-// --- Gemini AI Setup ---
-let geminiModel;
-if (GEMINI_API_KEY) {
+// ==========================================================
+// /// <<<--- 3. THIS IS THE CORRECTED CLAUDE AI SETUP ---
+// ==========================================================
+let claudeClient; // This must be declared here
+if (CLAUDE_API_KEY) {
     try {
-        const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-        geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        console.log("[*] Gemini AI configured successfully.");
+        claudeClient = new Anthropic({
+            apiKey: CLAUDE_API_KEY,
+        });
+        console.log("[*] Anthropic Claude AI configured successfully.");
     } catch (error) {
-        console.error(`[!!!] Failed to initialize Gemini AI: ${error.message}`);
-        geminiModel = null;
+        console.error(`[!!!] Failed to initialize Claude AI: ${error.message}`);
+        claudeClient = null;
     }
 } else {
-    console.log("[!!!] WARNING: GEMINI_API_KEY not found in .env. The !ask command will be disabled.");
-    geminiModel = null;
+    console.log("[!!!] WARNING: CLAUDE_API_KEY not found in .env. The !ask command will be disabled.");
+    claudeClient = null;
 }
-
 // --- Bot & Database Setup ---
 const client = new Client({
     intents: [
@@ -452,15 +455,21 @@ Avg. Win ROE: +${avgWinRoe}%
     });
 }
 
+ // v // ==========================================================
+    // /// <<<--- 4. THIS IS THE UPDATED ASK COMMAND ---
+    // ==========================================================
+    // ==========================================================
+    // /// <<<--- 4. THIS IS THE UPDATED ASK COMMAND ---
+    // ==========================================================
     if (command === 'ask') {
-        if (!geminiModel) return message.channel.send("Sorry, Master. My AI core is not configured. Please check the API key.");
+        if (!claudeClient) return message.channel.send("Sorry, Master. My AI core is not configured. Please check the API key.");
         const question = args.join(' ');
         if (!question) return message.channel.send("Please ask a question, Master.");
 
         await message.channel.sendTyping();
 
-        const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
-        const riskData = await readJsonFile(LIVE_RISK_FILE);
+        const analysisData = await readJsonFile('live_analysis.json');
+        const riskData = await readJsonFile('live_risk.json');
 
         const analysisDataStr = JSON.stringify(analysisData, null, 2) || "Not available.";
         let positionContextStr = "I am not currently in a position.";
@@ -468,12 +477,14 @@ Avg. Win ROE: +${avgWinRoe}%
             positionContextStr = `I am currently in a LONG position for ${riskData.asset}. My entry price was $${riskData.entryPrice.toFixed(2)}, the current price is $${riskData.currentPrice.toFixed(2)}, and my current ROE is ${riskData.roe}.`;
         }
         
-        // --- MODIFICATION: Added config to the prompt ---
         const configStr = JSON.stringify(config, null, 2);
 
-        const prompt = `Although you are a hyper-intelligent, and loyal trading bot serving your "Master"; you carry yourself like a military general. You are precise and do not accept groveling or self-pity. You speak in yelling and screaming like a mad general.   
+        // Claude uses a "system" prompt for the persona
+        const systemPrompt = `Although you are a hyper-intelligent, and loyal trading bot serving your "Master"; you carry yourself like a military general. You are precise and do not accept groveling or self-pity. You speak in yelling and screaming like a mad general. Based on your core configuration, operational status, AND market analysis, formulate a helpful and respectful response. Address your creator as "Master". Be conversational and interpret the data for them. Avoid listing exact numbers unless explicitly asked. Avoid talking about trading strategies or market sentiment when asked off-topic things or simple questions.`;
 
-        This is your core configuration, which dictates your strategy and behavior:
+        // The user message contains the context and the question
+        const userPrompt = `
+        This is your core configuration:
         \`\`\`json
         ${configStr}
         \`\`\`
@@ -485,21 +496,23 @@ Avg. Win ROE: +${avgWinRoe}%
         \`\`\`json
         ${analysisDataStr}
         \`\`\`
-        Your Master has asked: "${question}"
-
-        Based on your core configuration, operational status, AND market analysis, formulate a helpful and respectful response. Address your creator as "Master". Be conversational and interpret the data for them. Avoid listing exact numbers unless explicitly asked. Avoid talking about trading strategies or market sentiment when asked off-topic things or simple questions.`;
+        Your Master has asked: "${question}"`;
 
         try {
-            const result = await geminiModel.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
+            const msg = await claudeClient.messages.create({
+                model: "claude-3-haiku-20240307", // You can change this to other models like Sonnet or Opus
+                max_tokens: 1024,
+                system: systemPrompt,
+                messages: [{ role: 'user', content: userPrompt }],
+            });
+
+            const text = msg.content[0].text;
             await message.channel.send(text);
         } catch (error) {
-            console.error(`[!!!] Gemini AI Error: ${error.message}`);
+            console.error(`[!!!] Claude AI Error: ${error.message}`);
             await message.channel.send("I apologize, Master. I encountered an error while processing your request with my AI core.");
         }
     }
 });
-
 // --- Run the Bot ---
 client.login(BOT_TOKEN);
