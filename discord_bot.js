@@ -22,6 +22,7 @@ const LIVE_RISK_FILE = 'live_risk.json';
 const MANUAL_CLOSE_FILE = 'manual_close.json';
 const CHART_HTML_FILE = path.resolve(process.cwd(), 'chart.html');
 const CHART_IMG_FILE = path.resolve(process.cwd(), 'chart.png');
+const SIGNAL_GENERATOR_FILE = path.resolve(process.cwd(), 'src/components/SignalGenerator.js'); // NEW: Path to strategy file
 
 
 if (!BOT_TOKEN || !CHANNEL_ID) {
@@ -47,6 +48,7 @@ if (CLAUDE_API_KEY) {
     console.log("[!!!] WARNING: CLAUDE_API_KEY not found in .env. The !ask command will be disabled.");
     claudeClient = null;
 }
+
 // --- Bot & Database Setup ---
 const client = new Client({
     intents: [
@@ -59,6 +61,72 @@ const client = new Client({
 let db;
 let lastProcessedEventId = 0;
 const commandPrefix = "!";
+
+// ==========================================================
+// /// <<<--- NEW HELPER FUNCTION TO READ STRATEGY FILE ---
+// ==========================================================
+async function readStrategyFile() {
+    try {
+        const strategyCode = await fs.readFile(SIGNAL_GENERATOR_FILE, 'utf8');
+        return strategyCode;
+    } catch (error) {
+        console.error(`[Strategy Reader] Error reading SignalGenerator.js: ${error.message}`);
+        return null;
+    }
+}
+
+// ==========================================================
+// /// <<<--- NEW HELPER FUNCTION TO PARSE STRATEGY LOGIC ---
+// ==========================================================
+function parseStrategyFromCode(code) {
+    if (!code) return "Could not read strategy file.";
+    
+    try {
+        // Extract key strategy components using regex patterns
+        const blockers = [];
+        const conditions = [];
+        
+        // Look for trade blockers
+        if (code.includes('blockOn4hrStoch')) {
+            blockers.push("🚫 **4hr Stochastic Blocker**: Blocks trades when 4hr Stoch K or D > 80 (overbought)");
+        }
+        
+        if (code.includes('blockOnPriceTrend')) {
+            if (code.includes('stoch_rsi_4hr.k < 20 && stoch_rsi_4hr.d < 20')) {
+                blockers.push("🚫 **Price Trend Blocker**: Blocks trades in bearish trends, EXCEPT when 4hr Stoch is oversold (K,D < 20)");
+            } else {
+                blockers.push("🚫 **Price Trend Blocker**: Blocks trades when 4hr trend is bearish");
+            }
+        }
+        
+        if (code.includes('blockOn5minStoch')) {
+            blockers.push("🚫 **5min Stochastic Blocker**: Blocks entry when 5min Stoch K or D >= 80 at buy signal");
+        }
+        
+        // Look for entry conditions
+        if (code.includes('latest_price < fib_entry')) {
+            conditions.push("🎯 **Trigger Arming**: Price must drop below Fibonacci entry level first");
+        }
+        
+        if (code.includes('latest_price > wma_fib_0')) {
+            conditions.push("🔥 **Buy Signal**: Trigger fires when price bounces above WMA Fib 0 level (EMA-based)");
+        }
+        
+        // Look for safety checks
+        if (code.includes('stoch_rsi || typeof stoch_rsi.k')) {
+            conditions.push("⚠️ **Data Validation**: Requires valid 5min and 4hr Stochastic RSI data");
+        }
+        
+        return {
+            blockers: blockers.length > 0 ? blockers : ["No trade blockers detected"],
+            conditions: conditions.length > 0 ? conditions : ["No entry conditions detected"],
+            summary: code.includes('Fibonacci') ? "**Strategy Type**: Fibonacci retracement-based entry with multi-timeframe Stochastic RSI filtering" : "Strategy analysis incomplete"
+        };
+        
+    } catch (error) {
+        return "Error parsing strategy logic.";
+    }
+}
 
 // --- Helper Functions (omitted for brevity, they remain the same) ---
 async function getDbConnection() {
@@ -173,7 +241,6 @@ async function sendStatusReport() {
             { name: "Fib Entry", value: `\`$${analysisData.fib_entry.toFixed(2)}\``, inline: true },
             { name: "Fib 0", value: `\`$${analysisData.wma_fib_0.toFixed(2)}\``, inline: true },
         );
-        // --- MODIFIED THIS BLOCK ---
         if (analysisData.stoch_rsi && analysisData.stoch_rsi.k && analysisData.stoch_rsi.d) {
             const k = analysisData.stoch_rsi.k;
             let k_indicator = '';
@@ -185,19 +252,19 @@ async function sendStatusReport() {
             if (d < 20) d_indicator = '🟢';
             if (d > 80) d_indicator = '🔴';
 
-
             embed.addFields({ name: "Stoch RSI", value: `K: \`${k.toFixed(2)}\` ${k_indicator}\nD: \`${d.toFixed(2)}\` ${d_indicator}`, inline: true });
         } else {
             embed.addFields({ name: "Stoch RSI", value: "`Calculating...`", inline: true });
         }
     }
-      const lastEvent = (await localDb.get('SELECT event_type, timestamp FROM events ORDER BY id DESC LIMIT 1'));
-      if(lastEvent){
+    const lastEvent = (await localDb.get('SELECT event_type, timestamp FROM events ORDER BY id DESC LIMIT 1'));
+    if(lastEvent){
         const eventTime = new Date(lastEvent.timestamp).toLocaleTimeString();
         embed.setFooter({ text: `Last Event: ${lastEvent.event_type} at ${eventTime}` });
-      }
-    await channel.send({ embeds: [embed] });
+    }
+    await message.channel.send({ embeds: [embed] });
 }
+
 // --- Bot Events & Command Handling ---
 client.on('ready', async () => {
     console.log(`--- Discord Bot Connected ---`);
@@ -252,24 +319,22 @@ client.on('messageCreate', async (message) => {
         await message.channel.send({ embeds: [embed] });
     }
 
-   // In discord_bot.js
+    if (command === 'monitor') {
+        const riskData = await readJsonFile(LIVE_RISK_FILE);
+        const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
+        const localDb = await getDbConnection();
+        const embed = new EmbedBuilder().setTitle("🤖 Hyperliquid Bot Live Monitor").setColor(0x00FFFF).setTimestamp(new Date());
 
-  if (command === 'monitor') {
-    const riskData = await readJsonFile(LIVE_RISK_FILE);
-    const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
-    const localDb = await getDbConnection();
-    const embed = new EmbedBuilder().setTitle("🤖 Hyperliquid Bot Live Monitor").setColor(0x00FFFF).setTimestamp(new Date());
-
-    // --- Section 1: Live Position & Risk Management (No change here) ---
-    let riskDescription = "No open positions being tracked.";
-    if (riskData) {
-        const { leverage } = config.trading;
-        const liveTP = riskData.liveTakeProfitPercentage || config.risk.takeProfitPercentage;
-        const liveSL = riskData.liveStopLossPercentage || config.risk.stopLossPercentage;
-        const takeProfitPrice = riskData.entryPrice * (1 + (liveTP / leverage));
-        const stopLossPrice = riskData.entryPrice * (1 - (liveSL / leverage));
-        const roeDisplay = riskData.roe.includes('-') ? `🔴 ${riskData.roe}` : `🟢 ${riskData.roe}`;
-        riskDescription = `\`\`\`
+        // --- Section 1: Live Position & Risk Management ---
+        let riskDescription = "No open positions being tracked.";
+        if (riskData) {
+            const { leverage } = config.trading;
+            const liveTP = riskData.liveTakeProfitPercentage || config.risk.takeProfitPercentage;
+            const liveSL = riskData.liveStopLossPercentage || config.risk.stopLossPercentage;
+            const takeProfitPrice = riskData.entryPrice * (1 + (liveTP / leverage));
+            const stopLossPrice = riskData.entryPrice * (1 - (liveSL / leverage));
+            const roeDisplay = riskData.roe.includes('-') ? `🔴 ${riskData.roe}` : `🟢 ${riskData.roe}`;
+            riskDescription = `\`\`\`
 Asset         : ${riskData.asset}
 Entry Price   : $${riskData.entryPrice.toFixed(2)}
 Current Price : $${riskData.currentPrice.toFixed(2)}
@@ -279,45 +344,37 @@ Stop Type     : ${riskData.fibStopActive ? 'Fib Trail Stop (Price)' : `Fixed SL 
 Stop Price    : $${riskData.fibStopActive && riskData.stopPrice ? riskData.stopPrice.toFixed(2) : stopLossPrice.toFixed(2)}
 Take Profit   : $${takeProfitPrice.toFixed(2)} (${(liveTP * 100).toFixed(2)}%)
 \`\`\``;
-    }
-    embed.addFields({ name: "🛡️ Live Position & Risk Management", value: riskDescription });
-
-
-    // ==========================================================
-    // /// <<<--- THIS IS THE MODIFIED SECTION WITH COLORS ---
-    // ==========================================================
-    let analysisDescription = "Waiting for analysis data...";
-    if (analysisData) {
-
-        // --- Helper function for coloring stochastic values ---
-        const colorStoch = (value) => {
-            if (value > 80) return `\u001b[0;31m${value.toFixed(2)} (Overbought)\u001b[0;37m`; // Red
-            if (value < 20) return `\u001b[0;32m${value.toFixed(2)} (Oversold)\u001b[0;37m`;   // Green
-            return `\u001b[0;37m${value.toFixed(2)}\u001b[0;37m`;                            // White
-        };
-
-        // --- Get and color 5-min Stoch RSI data ---
-        let stochRSI_K_text = '\u001b[0;37mN/A\u001b[0;37m';
-        let stochRSI_D_text = '\u001b[0;37mN/A\u001b[0;37m';
-        if (analysisData.stoch_rsi) {
-            stochRSI_K_text = colorStoch(analysisData.stoch_rsi.k);
-            stochRSI_D_text = colorStoch(analysisData.stoch_rsi.d);
         }
+        embed.addFields({ name: "🛡️ Live Position & Risk Management", value: riskDescription });
 
-        // --- Get and color 4-hr data ---
-        const bullStateText = analysisData.bull_state
-            ? '\u001b[0;32m🐂 UPTREND\u001b[0;37m'
-            : '\u001b[0;31m🐻 DOWNTREND\u001b[0;37m';
+        // --- Section 2: Live Technical Analysis ---
+        let analysisDescription = "Waiting for analysis data...";
+        if (analysisData) {
+            const colorStoch = (value) => {
+                if (value > 80) return `\u001b[0;31m${value.toFixed(2)} (Overbought)\u001b[0;37m`;
+                if (value < 20) return `\u001b[0;32m${value.toFixed(2)} (Oversold)\u001b[0;37m`;
+                return `\u001b[0;37m${value.toFixed(2)}\u001b[0;37m`;
+            };
 
-        let stoch4hr_K_text = '\u001b[0;37mN/A\u001b[0;37m';
-        let stoch4hr_D_text = '\u001b[0;37mN/A\u001b[0;37m';
-        if (analysisData.stoch_rsi_4hr) {
-            stoch4hr_K_text = colorStoch(analysisData.stoch_rsi_4hr.k);
-            stoch4hr_D_text = colorStoch(analysisData.stoch_rsi_4hr.d);
-        }
+            let stochRSI_K_text = '\u001b[0;37mN/A\u001b[0;37m';
+            let stochRSI_D_text = '\u001b[0;37mN/A\u001b[0;37m';
+            if (analysisData.stoch_rsi) {
+                stochRSI_K_text = colorStoch(analysisData.stoch_rsi.k);
+                stochRSI_D_text = colorStoch(analysisData.stoch_rsi.d);
+            }
 
-        // --- Combine it all into one ANSI color-coded field ---
-        analysisDescription = `\`\`\`ansi
+            const bullStateText = analysisData.bull_state
+                ? '\u001b[0;32m🐂 UPTREND\u001b[0;37m'
+                : '\u001b[0;31m🐻 DOWNTREND\u001b[0;37m';
+
+            let stoch4hr_K_text = '\u001b[0;37mN/A\u001b[0;37m';
+            let stoch4hr_D_text = '\u001b[0;37mN/A\u001b[0;37m';
+            if (analysisData.stoch_rsi_4hr) {
+                stoch4hr_K_text = colorStoch(analysisData.stoch_rsi_4hr.k);
+                stoch4hr_D_text = colorStoch(analysisData.stoch_rsi_4hr.d);
+            }
+
+            analysisDescription = `\`\`\`ansi
 -- 4-Hour Analysis --
 Trend State   : ${bullStateText}
 Stoch (K)     : ${stoch4hr_K_text}
@@ -330,77 +387,120 @@ WMA Fib 0 Lvl : \u001b[0;37m$${analysisData.wma_fib_0.toFixed(2)}\u001b[0;37m
 Stoch RSI (K) : ${stochRSI_K_text}
 Stoch RSI (D) : ${stochRSI_D_text}
 \`\`\``;
-    }
-    embed.addFields({ name: "🔬 Live Technical Analysis", value: analysisDescription });
-
-
-    // --- Trade Performance & Recent Events (No change here) ---
-    if (localDb) {
-        const tradeEvents = await localDb.all("SELECT event_type, details FROM events WHERE event_type IN ('FIB_STOP_HIT', 'TAKE_PROFIT_HIT', 'STOP-LOSS HIT')");
-        let wins = 0;
-        let losses = 0;
-        let totalWinRoe = 0;
-
-        for (const event of tradeEvents) {
-            try {
-                const details = JSON.parse(event.details);
-                if (event.event_type === 'STOP-LOSS HIT') {
-                    losses++;
-                } else {
-                    wins++;
-                    let roe = 0;
-                    if (event.event_type === 'FIB_STOP_HIT' && details.roe) {
-                        roe = parseFloat(details.roe) * 100;
-                    } else if (event.event_type === 'TAKE-PROFIT HIT' && details.value) {
-                        roe = parseFloat(details.value.replace('%', ''));
-                    }
-                    totalWinRoe += roe;
-                }
-            } catch (e) {
-                console.error("Could not parse event details:", event.details);
-            }
         }
+        embed.addFields({ name: "🔬 Live Technical Analysis", value: analysisDescription });
 
-        const totalTrades = wins + losses;
-        const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) : "0.00";
-        const avgWinRoe = wins > 0 ? (totalWinRoe / wins).toFixed(2) : "0.00";
+        // --- Trade Performance & Recent Events ---
+        if (localDb) {
+            const tradeEvents = await localDb.all("SELECT event_type, details FROM events WHERE event_type IN ('FIB_STOP_HIT', 'TAKE_PROFIT_HIT', 'STOP-LOSS HIT')");
+            let wins = 0;
+            let losses = 0;
+            let totalWinRoe = 0;
 
-        const performanceDescription = `\`\`\`
+            for (const event of tradeEvents) {
+                try {
+                    const details = JSON.parse(event.details);
+                    if (event.event_type === 'STOP-LOSS HIT') {
+                        losses++;
+                    } else {
+                        wins++;
+                        let roe = 0;
+                        if (event.event_type === 'FIB_STOP_HIT' && details.roe) {
+                            roe = parseFloat(details.roe) * 100;
+                        } else if (event.event_type === 'TAKE-PROFIT HIT' && details.value) {
+                            roe = parseFloat(details.value.replace('%', ''));
+                        }
+                        totalWinRoe += roe;
+                    }
+                } catch (e) {
+                    console.error("Could not parse event details:", event.details);
+                }
+            }
+
+            const totalTrades = wins + losses;
+            const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) : "0.00";
+            const avgWinRoe = wins > 0 ? (totalWinRoe / wins).toFixed(2) : "0.00";
+
+            const performanceDescription = `\`\`\`
 Win Rate    : ${winRate}%
 Total Trades: ${totalTrades}
 Wins        : ${wins}
 Losses      : ${losses}
 Avg. Win ROE: +${avgWinRoe}%
 \`\`\``;
-        embed.addFields({ name: "📊 Trade Performance", value: performanceDescription });
-    }
-    if (localDb) {
-        const events = await localDb.all("SELECT timestamp, event_type FROM events ORDER BY id DESC LIMIT 10");
-        let eventDescription = "No events logged yet.";
-        if (events.length > 0) {
-            eventDescription = events.reverse().map(e => {
-                const time = new Date(e.timestamp).toLocaleTimeString();
-                return `\`${time}\` - **${e.event_type}**`;
-            }).join('\n');
+            embed.addFields({ name: "📊 Trade Performance", value: performanceDescription });
         }
-        embed.addFields({ name: "📜 Recent Events (last 10)", value: eventDescription });
+        if (localDb) {
+            const events = await localDb.all("SELECT timestamp, event_type FROM events ORDER BY id DESC LIMIT 10");
+            let eventDescription = "No events logged yet.";
+            if (events.length > 0) {
+                eventDescription = events.reverse().map(e => {
+                    const time = new Date(e.timestamp).toLocaleTimeString();
+                    return `\`${time}\` - **${e.event_type}**`;
+                }).join('\n');
+            }
+            embed.addFields({ name: "📜 Recent Events (last 10)", value: eventDescription });
+        }
+
+        await message.channel.send({ embeds: [embed] });
     }
 
-    await message.channel.send({ embeds: [embed] });
-}
-
-
     // ==========================================================
-    // /// <<<--- NEW CONFIG COMMAND ---
+    // /// <<<--- NEW STRATEGY COMMAND ---
     // ==========================================================
+    if (command === 'strategy') {
+        await message.channel.sendTyping();
+        
+        const strategyCode = await readStrategyFile();
+        if (!strategyCode) {
+            return message.channel.send("❌ Could not read the SignalGenerator.js file.");
+        }
+        
+        const strategyAnalysis = parseStrategyFromCode(strategyCode);
+        
+        const embed = new EmbedBuilder()
+            .setTitle("🎯 Current Trading Strategy")
+            .setColor(0xFF6B35) // Orange color
+            .setDescription(strategyAnalysis.summary || "Strategy analysis complete.")
+            .setTimestamp(new Date());
+
+        // Add Trade Blockers section
+        if (Array.isArray(strategyAnalysis.blockers)) {
+            const blockerText = strategyAnalysis.blockers.join('\n\n');
+            embed.addFields({ name: "🛡️ Active Trade Blockers", value: blockerText, inline: false });
+        }
+
+        // Add Entry Conditions section  
+        if (Array.isArray(strategyAnalysis.conditions)) {
+            const conditionText = strategyAnalysis.conditions.join('\n\n');
+            embed.addFields({ name: "⚡ Entry Logic", value: conditionText, inline: false });
+        }
+
+        // Add current blocker status from config
+        const blockerStatus = [];
+        if (config.trading.tradeBlockers) {
+            const { tradeBlockers } = config.trading;
+            blockerStatus.push(`4hr Stoch: ${tradeBlockers.blockOn4hrStoch ? '🔴 ACTIVE' : '🟢 DISABLED'}`);
+            blockerStatus.push(`Price Trend: ${tradeBlockers.blockOnPriceTrend ? '🔴 ACTIVE' : '🟢 DISABLED'}`);
+            blockerStatus.push(`5min Stoch: ${tradeBlockers.blockOn5minStoch ? '🔴 ACTIVE' : '🟢 DISABLED'}`);
+        }
+
+        if (blockerStatus.length > 0) {
+            embed.addFields({ name: "⚙️ Current Blocker Settings", value: blockerStatus.join('\n'), inline: true });
+        }
+
+        embed.setFooter({ text: "Strategy parsed from src/components/SignalGenerator.js" });
+        
+        await message.channel.send({ embeds: [embed] });
+    }
+
     if (command === 'config') {
         try {
-            // Format the config object into a nicely indented string
             const configString = JSON.stringify(config, null, 2);
             
             const embed = new EmbedBuilder()
                 .setTitle("⚙️ Bot Configuration")
-                .setColor(0x8A2BE2) // A purple color
+                .setColor(0x8A2BE2)
                 .setDescription(`Here are my current operational parameters, Master.`)
                 .addFields({ name: "Current Settings", value: `\`\`\`json\n${configString}\n\`\`\`` });
                 
@@ -411,55 +511,44 @@ Avg. Win ROE: +${avgWinRoe}%
         }
     }
     
+    if (command === 'chart') {
+        await message.channel.send("📊 Generating live chart, please wait a moment...");
+
+        exec('node src/utils/ChartGenerator.js', async (error, stdout, stderr) => {
+            if (error) {
+                console.error(`[Chart Command] Error executing script: ${error}`);
+                return message.channel.send("❌ Failed to generate chart data.");
+            }
+
+            try {
+                const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+                const page = await browser.newPage();
+                await page.goto(`file://${CHART_HTML_FILE}`);
+                await page.setViewport({ width: 1200, height: 750 });
+                await page.screenshot({ path: CHART_IMG_FILE });
+                await browser.close();
+
+                const file = new AttachmentBuilder(CHART_IMG_FILE);
+                const embed = new EmbedBuilder()
+                    .setTitle(`📈 Live Chart for ${config.trading.asset}`)
+                    .setImage(`attachment://${path.basename(CHART_IMG_FILE)}`)
+                    .setColor(0x7289DA)
+                    .setTimestamp(new Date());
+
+                await message.channel.send({ embeds: [embed], files: [file] });
+
+                await fs.unlink(CHART_HTML_FILE);
+                await fs.unlink(CHART_IMG_FILE);
+
+            } catch (screenshotError) {
+                console.error(`[Chart Command] Error during screenshot process: ${screenshotError}`);
+                await message.channel.send("❌ An error occurred while capturing the chart image.");
+            }
+        });
+    }
+
     // ==========================================================
-    // /// <<<--- CHART COMMAND ---
-    // ==========================================================
-   if (command === 'chart') {
-    await message.channel.send("📊 Generating live chart, please wait a moment...");
-
-    // 1. Run the chart generator script to create chart.html
-    exec('node src/utils/ChartGenerator.js', async (error, stdout, stderr) => {
-        if (error) {
-            console.error(`[Chart Command] Error executing script: ${error}`);
-            return message.channel.send("❌ Failed to generate chart data.");
-        }
-
-        try {
-            // 2. Launch Puppeteer to take a screenshot
-            const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-            const page = await browser.newPage();
-            // Go to the locally generated HTML file
-            await page.goto(`file://${CHART_HTML_FILE}`);
-            await page.setViewport({ width: 1200, height: 750 });
-            await page.screenshot({ path: CHART_IMG_FILE });
-            await browser.close();
-
-            // 3. Send the image to Discord
-            const file = new AttachmentBuilder(CHART_IMG_FILE);
-            const embed = new EmbedBuilder()
-                .setTitle(`📈 Live Chart for ${config.trading.asset}`)
-                .setImage(`attachment://${path.basename(CHART_IMG_FILE)}`)
-                .setColor(0x7289DA)
-                .setTimestamp(new Date());
-
-            await message.channel.send({ embeds: [embed], files: [file] });
-
-            // 4. Clean up BOTH generated files
-            await fs.unlink(CHART_HTML_FILE);
-            await fs.unlink(CHART_IMG_FILE);
-
-        } catch (screenshotError) {
-            console.error(`[Chart Command] Error during screenshot process: ${screenshotError}`);
-            await message.channel.send("❌ An error occurred while capturing the chart image.");
-        }
-    });
-}
-
- // v // ==========================================================
-    // /// <<<--- 4. THIS IS THE UPDATED ASK COMMAND ---
-    // ==========================================================
-    // ==========================================================
-    // /// <<<--- 4. THIS IS THE UPDATED ASK COMMAND ---
+    // /// <<<--- ENHANCED ASK COMMAND WITH STRATEGY CONTEXT ---
     // ==========================================================
     if (command === 'ask') {
         if (!claudeClient) return message.channel.send("Sorry, Master. My AI core is not configured. Please check the API key.");
@@ -470,17 +559,42 @@ Avg. Win ROE: +${avgWinRoe}%
 
         const analysisData = await readJsonFile('live_analysis.json');
         const riskData = await readJsonFile('live_risk.json');
+        const strategyCode = await readStrategyFile(); // NEW: Read strategy file
 
         const analysisDataStr = JSON.stringify(analysisData, null, 2) || "Not available.";
         let positionContextStr = "I am not currently in a position.";
         if (riskData) {
-            positionContextStr = `I am currently in a LONG position for ${riskData.asset}. My entry price was $${riskData.entryPrice.toFixed(2)}, the current price is $${riskData.currentPrice.toFixed(2)}, and my current ROE is ${riskData.roe}.`;
+            positionContextStr = `I am currently in a LONG position for ${riskData.asset}. My entry price was ${riskData.entryPrice.toFixed(2)}, the current price is ${riskData.currentPrice.toFixed(2)}, and my current ROE is ${riskData.roe}.`;
         }
         
         const configStr = JSON.stringify(config, null, 2);
+        
+        // NEW: Parse strategy for AI context
+        const strategyAnalysis = parseStrategyFromCode(strategyCode);
+        const strategyContext = strategyCode ? 
+            `My current trading strategy logic (from SignalGenerator.js):
+            
+Summary: ${strategyAnalysis.summary || "Fibonacci-based strategy with multi-timeframe filtering"}
+
+Active Trade Blockers:
+${Array.isArray(strategyAnalysis.blockers) ? strategyAnalysis.blockers.join('\n') : 'No blockers detected'}
+
+Entry Conditions:
+${Array.isArray(strategyAnalysis.conditions) ? strategyAnalysis.conditions.join('\n') : 'No conditions detected'}
+
+Current Blocker Settings:
+- 4hr Stoch Blocker: ${config.trading?.tradeBlockers?.blockOn4hrStoch ? 'ACTIVE' : 'DISABLED'}
+- Price Trend Blocker: ${config.trading?.tradeBlockers?.blockOnPriceTrend ? 'ACTIVE' : 'DISABLED'}  
+- 5min Stoch Blocker: ${config.trading?.tradeBlockers?.blockOn5minStoch ? 'ACTIVE' : 'DISABLED'}
+
+Key Strategy Code Excerpt:
+\`\`\`javascript
+${strategyCode.substring(0, 500)}...
+\`\`\`` 
+            : "Strategy code could not be read.";
 
         // Claude uses a "system" prompt for the persona
-        const systemPrompt = `Although you are a hyper-intelligent, and loyal trading bot serving your "Master"; you carry yourself like a military general. You are precise and do not accept groveling or self-pity. You speak in yelling and screaming like a mad general. Based on your core configuration, operational status, AND market analysis, formulate a helpful and respectful response. Address your creator as "Master". Be conversational and interpret the data for them. Avoid listing exact numbers unless explicitly asked. Avoid talking about trading strategies or market sentiment when asked off-topic things or simple questions.`;
+        const systemPrompt = `You are a hyper-intelligent, loyal trading bot serving your "Master". You carry yourself like a military general - precise, direct, and no-nonsense. You speak with authority and conviction, using military-style language when appropriate. You have deep knowledge of your own trading strategy and can explain it clearly. Address your creator as "Master". Be conversational and interpret data for them. When discussing strategy, be thorough but concise. Avoid excessive technical jargon unless specifically asked.`;
 
         // The user message contains the context and the question
         const userPrompt = `
@@ -496,6 +610,9 @@ Avg. Win ROE: +${avgWinRoe}%
         \`\`\`json
         ${analysisDataStr}
         \`\`\`
+        
+        ${strategyContext}
+        
         Your Master has asked: "${question}"`;
 
         try {
@@ -514,5 +631,6 @@ Avg. Win ROE: +${avgWinRoe}%
         }
     }
 });
+
 // --- Run the Bot ---
 client.login(BOT_TOKEN);
