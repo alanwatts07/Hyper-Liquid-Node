@@ -60,7 +60,7 @@ class TradingBot {
                 logger.info(`Stoch RSI: K=${k.toFixed(2)}, D=${d.toFixed(2)}`);
             }
 
-            let signal = this.signalGenerator.generate(this.latestAnalysis);
+            let signal = await this.signalGenerator.generate(this.latestAnalysis);
             
             if (this.config.debug.logTickAnalysis) {
                 await this.db.logEvent('BOT_TICK_ANALYSIS', { analysis: this.latestAnalysis, signal: signal });

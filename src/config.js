@@ -2,29 +2,42 @@
 import 'dotenv/config';
 
 const config = {
-    // --- ADD THIS SECTION ---
-    // General Settings
+    // --- General Settings ---
     debug: {
-        enabled: true, // Master switch for all debug features
-        logTickAnalysis: false, // <-- ADD THIS LINE: Set to false to disable logging every tick
+        enabled: true,
+        logTickAnalysis: false,
     },
 
-    // Trading Parameters
+    // --- Trading Parameters ---
     trading: {
         asset: "SOL",
-        tradeUsdSize: 360,
-        leverage: 12,
+        tradeUsdSize: 625,
+        leverage: 20,
         slippage: 0.01,
         cooldownMinutes: 10,
+        
+        // --- THIS IS THE NEW SECTION ---
+        // These switches allow you to enable or disable certain trade entry conditions.
+        tradeBlockers: {
+            // If true, the bot will NOT enter a trade if the 4-hour Stoch RSI is overbought ( > 80).
+            blockOn4hrStoch: true,
+            
+            // If true, the bot will NOT enter a trade if the 5-minute Stoch RSI is overbought ( > 80).
+            blockOn5minStoch: true,
+            
+            // If true, the bot will ONLY enter a trade if the 4-hour price trend is bullish.
+            // Set to 'false' to allow trades in both uptrends and downtrends.
+            blockOnPriceTrend: false
+        }
     },
 
-    // Risk Management
+    // --- Risk Management ---
     risk: {
         stopLossPercentage: 0.45,
         takeProfitPercentage: 2.15,
     },
 
-    // Technical Analysis
+    // --- Technical Analysis ---
     ta: {
         atrPeriod: 14,
         fibLookback: 42,
@@ -37,9 +50,8 @@ const config = {
             kPeriod: 3,
             dPeriod: 3
         },
-         // ADD THIS NEW SECTION
         fourHour: {
-            trendMaPeriod: 20, // Moving average period for 4hr trend
+            trendMaPeriod: 20,
             stoch: {
                 rsiPeriod: 14,
                 stochPeriod: 14,
@@ -47,21 +59,20 @@ const config = {
                 dPeriod: 3
             }
         }
-
     },
 
-    // Data Collection
+    // --- Data Collection ---
     collector: {
         intervalSeconds: 60,
     },
 
-    // Discord Notifications
+    // --- Discord Notifications ---
     discord: {
         //webhookUrl: process.env.DISCORD_WEBHOOK_URL,
         botName: "Bot 1 Hyperliquid",
     },
 
-    // Database
+    // --- Database ---
     database: {
         file: "trading_bot.db",
     },

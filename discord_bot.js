@@ -251,131 +251,141 @@ client.on('messageCreate', async (message) => {
 
    // In discord_bot.js
 
-    if (command === 'monitor') {
-        const riskData = await readJsonFile(LIVE_RISK_FILE);
-        const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
-        const localDb = await getDbConnection();
-        const embed = new EmbedBuilder().setTitle("🤖 Hyperliquid Bot Live Monitor").setColor(0x00FFFF).setTimestamp(new Date());
+  if (command === 'monitor') {
+    const riskData = await readJsonFile(LIVE_RISK_FILE);
+    const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
+    const localDb = await getDbConnection();
+    const embed = new EmbedBuilder().setTitle("🤖 Hyperliquid Bot Live Monitor").setColor(0x00FFFF).setTimestamp(new Date());
 
-        // --- Section 1: Live Position & Risk Management ---
-        let riskDescription = "No open positions being tracked.";
-        if (riskData) {
-            const { leverage } = config.trading;
-
-            // Use live percentages from the risk file, with a fallback to the main config
-            const liveTP = riskData.liveTakeProfitPercentage || config.risk.takeProfitPercentage;
-            const liveSL = riskData.liveStopLossPercentage || config.risk.stopLossPercentage;
-
-            // Calculate prices based on the live percentages
-            const takeProfitPrice = riskData.entryPrice * (1 + (liveTP / leverage));
-            const stopLossPrice = riskData.entryPrice * (1 - (liveSL / leverage));
-
-            const roeDisplay = riskData.roe.includes('-') ? `🔴 ${riskData.roe}` : `🟢 ${riskData.roe}`;
-            const bullStateText = riskData.bull_state ? '🐂 UPTREND' : '🐻 DOWNTREND';
-            let stoch4hr_K_text = 'N/A';
-            let stoch4hr_D_text = 'N/A';
-            if (riskData.stoch_rsi_4hr) {
-                stoch4hr_K_text = `${riskData.stoch_rsi_4hr.k.toFixed(2)}`;
-                stoch4hr_D_text = `${riskData.stoch_rsi_4hr.d.toFixed(2)}`;
-            }
-
-            riskDescription = `\`\`\`
-    Asset         : ${riskData.asset}
-    Entry Price   : $${riskData.entryPrice.toFixed(2)}
-    Current Price : $${riskData.currentPrice.toFixed(2)}
-    Live ROE      : ${roeDisplay}
-    ----------------------------------
-    4hr Trend     : ${bullStateText}
-    4hr Stoch (K) : ${stoch4hr_K_text}
-    4hr Stoch (D) : ${stoch4hr_D_text}
-    ----------------------------------
-    Stop Type     : ${riskData.fibStopActive ? 'Fib Trail Stop (Price)' : `Fixed SL (${(liveSL * 100).toFixed(2)}%)`}
-    Stop Price    : $${riskData.fibStopActive && riskData.stopPrice ? riskData.stopPrice.toFixed(2) : stopLossPrice.toFixed(2)}
-    Take Profit   : $${takeProfitPrice.toFixed(2)} (${(liveTP * 100).toFixed(2)}%)
-    \`\`\``;
-        }
-        embed.addFields({ name: "🛡️ Live Position & Risk Management", value: riskDescription });
-
-        // --- Section 2: Live Technical Analysis (5-min) ---
-        let analysisDescription = "Waiting for analysis data...";
-        let stochRSI_K_text = 'N/A';
-        let stochRSI_D_text = 'N/A';
-        if (analysisData) {
-            if (analysisData.stoch_rsi) {
-                const k = analysisData.stoch_rsi.k;
-                let k_indicator = k < 20 ? '🟢 (Oversold)' : k > 80 ? '🔴 (Overbought)' : '';
-                stochRSI_K_text = `${k.toFixed(2)} ${k_indicator}`;
-
-                const d = analysisData.stoch_rsi.d;
-                let d_indicator = d < 20 ? '🟢' : d > 80 ? '🔴' : '';
-                stochRSI_D_text = `${d.toFixed(2)} ${d_indicator}`;
-            }
-            analysisDescription = `\`\`\`
-    Latest Price  : $${analysisData.latest_price.toFixed(2)}
-    Fib Entry Lvl : $${analysisData.fib_entry.toFixed(2)}
-    WMA Fib 0 Lvl : $${analysisData.wma_fib_0.toFixed(2)}
-    Stoch RSI (K) : ${stochRSI_K_text}
-    Stoch RSI (D) : ${stochRSI_D_text}
-    \`\`\``;
-        }
-        embed.addFields({ name: "🔬 Live Technical Analysis (5-min)", value: analysisDescription });
-
-        // --- Section 3: Trade Performance ---
-        if (localDb) {
-            const tradeEvents = await localDb.all("SELECT event_type, details FROM events WHERE event_type IN ('FIB_STOP_HIT', 'TAKE_PROFIT_HIT', 'STOP-LOSS HIT')");
-            let wins = 0;
-            let losses = 0;
-            let totalWinRoe = 0;
-
-            for (const event of tradeEvents) {
-                try {
-                    const details = JSON.parse(event.details);
-                    if (event.event_type === 'STOP-LOSS HIT') {
-                        losses++;
-                    } else {
-                        wins++;
-                        let roe = 0;
-                        if (event.event_type === 'FIB_STOP_HIT' && details.roe) {
-                            roe = parseFloat(details.roe) * 100;
-                        } else if (event.event_type === 'TAKE_PROFIT_HIT' && details.value) {
-                            roe = parseFloat(details.value.replace('%', ''));
-                        }
-                        totalWinRoe += roe;
-                    }
-                } catch (e) {
-                    console.error("Could not parse event details:", event.details);
-                }
-            }
-
-            const totalTrades = wins + losses;
-            const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) : "0.00";
-            const avgWinRoe = wins > 0 ? (totalWinRoe / wins).toFixed(2) : "0.00";
-
-            const performanceDescription = `\`\`\`
-    Win Rate    : ${winRate}%
-    Total Trades: ${totalTrades}
-    Wins        : ${wins}
-    Losses      : ${losses}
-    Avg. Win ROE: +${avgWinRoe}%
-    \`\`\``;
-            embed.addFields({ name: "📊 Trade Performance", value: performanceDescription });
-        }
-
-        // --- Section 4: Recent Events ---
-        if (localDb) {
-            const events = await localDb.all("SELECT timestamp, event_type FROM events ORDER BY id DESC LIMIT 10");
-            let eventDescription = "No events logged yet.";
-            if (events.length > 0) {
-                eventDescription = events.reverse().map(e => {
-                    const time = new Date(e.timestamp).toLocaleTimeString();
-                    return `\`${time}\` - **${e.event_type}**`;
-                }).join('\n');
-            }
-            embed.addFields({ name: "📜 Recent Events (last 10)", value: eventDescription });
-        }
-
-        await message.channel.send({ embeds: [embed] });
+    // --- Section 1: Live Position & Risk Management (No change here) ---
+    let riskDescription = "No open positions being tracked.";
+    if (riskData) {
+        const { leverage } = config.trading;
+        const liveTP = riskData.liveTakeProfitPercentage || config.risk.takeProfitPercentage;
+        const liveSL = riskData.liveStopLossPercentage || config.risk.stopLossPercentage;
+        const takeProfitPrice = riskData.entryPrice * (1 + (liveTP / leverage));
+        const stopLossPrice = riskData.entryPrice * (1 - (liveSL / leverage));
+        const roeDisplay = riskData.roe.includes('-') ? `🔴 ${riskData.roe}` : `🟢 ${riskData.roe}`;
+        riskDescription = `\`\`\`
+Asset         : ${riskData.asset}
+Entry Price   : $${riskData.entryPrice.toFixed(2)}
+Current Price : $${riskData.currentPrice.toFixed(2)}
+Live ROE      : ${roeDisplay}
+----------------------------------
+Stop Type     : ${riskData.fibStopActive ? 'Fib Trail Stop (Price)' : `Fixed SL (${(liveSL * 100).toFixed(2)}%)`}
+Stop Price    : $${riskData.fibStopActive && riskData.stopPrice ? riskData.stopPrice.toFixed(2) : stopLossPrice.toFixed(2)}
+Take Profit   : $${takeProfitPrice.toFixed(2)} (${(liveTP * 100).toFixed(2)}%)
+\`\`\``;
     }
+    embed.addFields({ name: "🛡️ Live Position & Risk Management", value: riskDescription });
+
+
+    // ==========================================================
+    // /// <<<--- THIS IS THE MODIFIED SECTION WITH COLORS ---
+    // ==========================================================
+    let analysisDescription = "Waiting for analysis data...";
+    if (analysisData) {
+
+        // --- Helper function for coloring stochastic values ---
+        const colorStoch = (value) => {
+            if (value > 80) return `\u001b[0;31m${value.toFixed(2)} (Overbought)\u001b[0;37m`; // Red
+            if (value < 20) return `\u001b[0;32m${value.toFixed(2)} (Oversold)\u001b[0;37m`;   // Green
+            return `\u001b[0;37m${value.toFixed(2)}\u001b[0;37m`;                            // White
+        };
+
+        // --- Get and color 5-min Stoch RSI data ---
+        let stochRSI_K_text = '\u001b[0;37mN/A\u001b[0;37m';
+        let stochRSI_D_text = '\u001b[0;37mN/A\u001b[0;37m';
+        if (analysisData.stoch_rsi) {
+            stochRSI_K_text = colorStoch(analysisData.stoch_rsi.k);
+            stochRSI_D_text = colorStoch(analysisData.stoch_rsi.d);
+        }
+
+        // --- Get and color 4-hr data ---
+        const bullStateText = analysisData.bull_state
+            ? '\u001b[0;32m🐂 UPTREND\u001b[0;37m'
+            : '\u001b[0;31m🐻 DOWNTREND\u001b[0;37m';
+
+        let stoch4hr_K_text = '\u001b[0;37mN/A\u001b[0;37m';
+        let stoch4hr_D_text = '\u001b[0;37mN/A\u001b[0;37m';
+        if (analysisData.stoch_rsi_4hr) {
+            stoch4hr_K_text = colorStoch(analysisData.stoch_rsi_4hr.k);
+            stoch4hr_D_text = colorStoch(analysisData.stoch_rsi_4hr.d);
+        }
+
+        // --- Combine it all into one ANSI color-coded field ---
+        analysisDescription = `\`\`\`ansi
+-- 4-Hour Analysis --
+Trend State   : ${bullStateText}
+Stoch (K)     : ${stoch4hr_K_text}
+Stoch (D)     : ${stoch4hr_D_text}
+-----------------------
+-- 5-Minute Analysis --
+Latest Price  : \u001b[0;37m$${analysisData.latest_price.toFixed(2)}\u001b[0;37m
+Fib Entry Lvl : \u001b[0;37m$${analysisData.fib_entry.toFixed(2)}\u001b[0;37m
+WMA Fib 0 Lvl : \u001b[0;37m$${analysisData.wma_fib_0.toFixed(2)}\u001b[0;37m
+Stoch RSI (K) : ${stochRSI_K_text}
+Stoch RSI (D) : ${stochRSI_D_text}
+\`\`\``;
+    }
+    embed.addFields({ name: "🔬 Live Technical Analysis", value: analysisDescription });
+
+
+    // --- Trade Performance & Recent Events (No change here) ---
+    if (localDb) {
+        const tradeEvents = await localDb.all("SELECT event_type, details FROM events WHERE event_type IN ('FIB_STOP_HIT', 'TAKE_PROFIT_HIT', 'STOP-LOSS HIT')");
+        let wins = 0;
+        let losses = 0;
+        let totalWinRoe = 0;
+
+        for (const event of tradeEvents) {
+            try {
+                const details = JSON.parse(event.details);
+                if (event.event_type === 'STOP-LOSS HIT') {
+                    losses++;
+                } else {
+                    wins++;
+                    let roe = 0;
+                    if (event.event_type === 'FIB_STOP_HIT' && details.roe) {
+                        roe = parseFloat(details.roe) * 100;
+                    } else if (event.event_type === 'TAKE-PROFIT HIT' && details.value) {
+                        roe = parseFloat(details.value.replace('%', ''));
+                    }
+                    totalWinRoe += roe;
+                }
+            } catch (e) {
+                console.error("Could not parse event details:", event.details);
+            }
+        }
+
+        const totalTrades = wins + losses;
+        const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(2) : "0.00";
+        const avgWinRoe = wins > 0 ? (totalWinRoe / wins).toFixed(2) : "0.00";
+
+        const performanceDescription = `\`\`\`
+Win Rate    : ${winRate}%
+Total Trades: ${totalTrades}
+Wins        : ${wins}
+Losses      : ${losses}
+Avg. Win ROE: +${avgWinRoe}%
+\`\`\``;
+        embed.addFields({ name: "📊 Trade Performance", value: performanceDescription });
+    }
+    if (localDb) {
+        const events = await localDb.all("SELECT timestamp, event_type FROM events ORDER BY id DESC LIMIT 10");
+        let eventDescription = "No events logged yet.";
+        if (events.length > 0) {
+            eventDescription = events.reverse().map(e => {
+                const time = new Date(e.timestamp).toLocaleTimeString();
+                return `\`${time}\` - **${e.event_type}**`;
+            }).join('\n');
+        }
+        embed.addFields({ name: "📜 Recent Events (last 10)", value: eventDescription });
+    }
+
+    await message.channel.send({ embeds: [embed] });
+}
+
 
     // ==========================================================
     // /// <<<--- NEW CONFIG COMMAND ---

@@ -1,76 +1,99 @@
+// src/components/SignalGenerator.js
 import logger from '../utils/logger.js';
 
 class SignalGenerator {
     constructor(config, db, state, notifier) {
         this.config = config;
         this.db = db;
-        this.state = state; // this.state is the StateManager instance
+        this.state = state;
         this.notifier = notifier;
     }
 
-    generate(analysis) {
-        const currentPrice = analysis.latest_price;
-        // --- FIX: Add stoch_rsi_4hr and bull_state to the destructuring ---
-        const { fib_entry, wma_fib_0, stoch_rsi, stoch_rsi_4hr, bull_state } = analysis;
+    // --- 1. Make the function async ---
+    async generate(analysis) {
+        const { latest_price, fib_entry, wma_fib_0, stoch_rsi, stoch_rsi_4hr, bull_state } = analysis;
+        const { tradeBlockers } = this.config.trading; // Get the new blocker settings
 
-        // --- Safety Checks ---
+        // --- Safety Checks (ensure data exists) ---
         if (!stoch_rsi || typeof stoch_rsi.k === 'undefined' || typeof stoch_rsi.d === 'undefined') {
-            return { type: 'hold', reason: 'Waiting for Stochastic RSI data to be calculated.' };
+            return { type: 'hold', reason: 'Waiting for 5-min Stochastic RSI data.' };
         }
-        
-        // NEW: 4-hour Stoch RSI check
         if (!stoch_rsi_4hr || typeof stoch_rsi_4hr.k === 'undefined') {
             return { type: 'hold', reason: 'Waiting for 4-hour Stochastic RSI data.' };
         }
 
-        // NEW: Prevent trades if 4hr Stoch is too high
-        if (stoch_rsi_4hr.k > 80 || stoch_rsi_4hr.d > 80) {
-            const reason = `HOLD: 4-hour Stoch RSI is too high (K: ${stoch_rsi_4hr.k.toFixed(2)}, D: ${stoch_rsi_4hr.d.toFixed(2)}).`;
+        // ==========================================================
+        // /// <<<--- UPDATED TRADE BLOCKER LOGIC ---
+        // ==========================================================
+        
+        // --- Blocker 1: 4-Hour Stochastic RSI ---
+        if (tradeBlockers.blockOn4hrStoch && (stoch_rsi_4hr.k > 80 || stoch_rsi_4hr.d > 80)) {
+            const reason = `HOLD (BLOCKER): 4hr Stoch is overbought.`;
             logger.info(reason);
-            return { type: 'hold', reason: reason };
+            // --- 2. Add database event log ---
+            await this.db.logEvent('TRADE_BLOCKED', { 
+                reason: '4hr_stoch_overbought', 
+                k: stoch_rsi_4hr.k, 
+                d: stoch_rsi_4hr.d 
+            });
+            return { type: 'hold', reason };
         }
 
+        // --- Blocker 2: 4-Hour Price Trend ---
+        if (tradeBlockers.blockOnPriceTrend && !bull_state) {
+            const reason = `HOLD (BLOCKER): 4hr price trend is bearish.`;
+            logger.info(reason);
+            // --- 2. Add database event log ---
+            await this.db.logEvent('TRADE_BLOCKED', { 
+                reason: '4hr_trend_bearish', 
+                bull_state: bull_state 
+            });
+            return { type: 'hold', reason };
+        }
 
-        // 1. Check conditions if the trigger is NOT currently armed
+        // --- Standard Arm/Disarm Logic (no changes here) ---
         if (!this.state.isTriggerArmed()) {
-            // ARM condition: Price drops BELOW our desired entry zone.
-            if (currentPrice < fib_entry) {
+            if (latest_price < fib_entry) {
                 this.state.setTriggerArmed(true);
-                const message = `BUY TRIGGER ARMED. Price ${currentPrice.toFixed(2)} is below entry level ${fib_entry.toFixed(2)}. Waiting for bounce above buy level > ${wma_fib_0.toFixed(2)}.`;
+                const message = `BUY TRIGGER ARMED. Price ${latest_price.toFixed(2)} is below entry level ${fib_entry.toFixed(2)}.`;
                 logger.info(message);
                 this.notifier.send("Trigger Armed", message, "info");
                 return { type: 'hold', reason: 'Trigger has been armed.' };
             }
-            // If not armed and condition isn't met, just wait.
             return { type: 'hold', reason: `Waiting for price < ${fib_entry.toFixed(2)} to arm trigger.` };
         }
 
-        // 2. Check conditions if the trigger IS currently armed
+        // --- Buy Condition Logic ---
         if (this.state.isTriggerArmed()) {
-            // BUY Condition: Price has bounced back up and crossed ABOVE our target buy level.
-            if (currentPrice > wma_fib_0) {
-                
-                // --- ADDED THIS FINAL CHECK ---
-                // Also check if both Stoch RSI lines are below 60 to confirm momentum isn't exhausted.
-                if (stoch_rsi.k < 80 && stoch_rsi.d < 80) {
-                    this.state.setTriggerArmed(false); // Disarm after the successful trade signal.
-                    const message = `BUY SIGNAL! Price > WMA_Fib_0 AND Stoch RSI K/D (${stoch_rsi.k.toFixed(2)}/${stoch_rsi.d.toFixed(2)}) < 60.`;
-                    logger.info(`🟢 ${message}`);
-                    this.notifier.send("🔥 BUY SIGNAL 🔥", message, "success");
-                    return { type: 'buy', reason: message };
-                } else {
-                    // Price condition was met, but the Stoch RSI filter blocked it.
-                    const reason = `HOLD: Price is > ${wma_fib_0.toFixed(2)}, but Stoch RSI is too high (K: ${stoch_rsi.k.toFixed(2)}, D: ${stoch_rsi.d.toFixed(2)}). Waiting for a pullback.`;
-                    logger.info(reason);
-                    return { type: 'hold', reason: reason };
-                }
-            }
+            // Buy condition: Price has bounced above our target level.
+            if (latest_price > wma_fib_0) {
 
-            // If still armed but the buy condition is not met, we simply wait.
+                // --- Blocker 3: 5-Minute Stochastic RSI ---
+                // If enabled, check if the 5min Stoch is overbought right at the entry point.
+                if (tradeBlockers.blockOn5minStoch) {
+                    if (stoch_rsi.k >= 80 || stoch_rsi.d >= 80) {
+                        const reason = `HOLD: Price condition met, but 5min Stoch is overbought.`;
+                        logger.info(reason);
+                        // --- 2. Add database event log ---
+                        await this.db.logEvent('TRADE_BLOCKED', { 
+                            reason: '5min_stoch_overbought', 
+                            k: stoch_rsi.k, 
+                            d: stoch_rsi.d 
+                        });
+                        return { type: 'hold', reason: reason };
+                    }
+                }
+
+                // If we get to this point, all enabled blockers and conditions have been passed.
+                this.state.setTriggerArmed(false);
+                const message = `BUY SIGNAL! Price > WMA_Fib_0 and all blockers passed.`;
+                logger.info(`🟢 ${message}`);
+                this.notifier.send("🔥 BUY SIGNAL 🔥", message, "success");
+                return { type: 'buy', reason: message };
+            }
             return { type: 'hold', reason: `Trigger is armed. Waiting for price > ${wma_fib_0.toFixed(2)}.` };
         }
-
-        // Default case, should not be reached but good for safety
+        
         return { type: 'hold', reason: 'No signal conditions met.' };
     }
 }
