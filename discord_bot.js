@@ -12,6 +12,7 @@ import DatabaseManager from './src/database/DatabaseManager.js';
 import DataCollector from './src/components/DataCollector.js';
 import TradeExecutor from './src/components/TradeExecutor.js';
 import StateManager from './src/components/StateManager.js';
+import MarketRegimeAI from './src/components/MarketRegimeAI.js';
 import { exec } from 'child_process'; // For running scripts
 import puppeteer from 'puppeteer';   // For screenshots
 import Anthropic from '@anthropic-ai/sdk'; // <-- 1. IMPORT CLAUDE'S SDK
@@ -76,6 +77,7 @@ let tradeDb;
 let dataCollector;
 let tradeExecutor;
 let stateManager;
+let marketRegimeAI;
 const POSITION_FILE = 'position.json';
 
 // ==========================================================
@@ -157,6 +159,7 @@ async function initializeTradeComponents() {
         dataCollector = new DataCollector(config);
         tradeExecutor = new TradeExecutor(config, tradeDb, dataCollector);
         stateManager = new StateManager(tradeDb, tradeExecutor);
+        marketRegimeAI = new MarketRegimeAI(config, tradeDb);
         
         console.log('[*] Trading components initialized for Discord bot.');
         return true;
@@ -349,7 +352,7 @@ client.on('messageCreate', async (message) => {
                 },
                 {
                     name: "⚙️ **Configuration & Analysis**",
-                    value: `\`!config\` - View current bot settings\n\`!strategy\` - Current trading strategy analysis\n\`!ask [question]\` - AI-powered bot consultation`,
+                    value: `\`!config\` - View current bot settings\n\`!strategy\` - Current trading strategy analysis\n\`!regime\` - AI-powered market regime assessment\n\`!ask [question]\` - AI-powered bot consultation`,
                     inline: false
                 },
                 {
@@ -366,7 +369,7 @@ client.on('messageCreate', async (message) => {
             .addFields(
                 {
                     name: "🔐 **Access Levels**",
-                    value: "• **Public**: status, monitor, logs, config, strategy, chart, ask, info\n• **Owner Only**: buy, panic (requires DISCORD_OWNER_ID)",
+                    value: "• **Public**: status, monitor, logs, config, strategy, regime, chart, ask, info\n• **Owner Only**: buy, panic (requires DISCORD_OWNER_ID)",
                     inline: false
                 },
                 {
@@ -549,6 +552,99 @@ Avg. Win ROE: +${avgWinRoe}%
     }
 
     // ==========================================================
+    // /// <<<--- NEW REGIME COMMAND ---
+    // ==========================================================
+    if (command === 'regime') {
+        if (!marketRegimeAI) {
+            return message.channel.send("❌ Market Regime AI not initialized. Please check bot configuration.");
+        }
+
+        await message.channel.sendTyping();
+        await message.channel.send("🧠 Analyzing current market regime with AI...");
+
+        try {
+            const analysisData = await readJsonFile(LIVE_ANALYSIS_FILE);
+            if (!analysisData) {
+                return message.channel.send("❌ No analysis data available. Bot may not be running.");
+            }
+
+            // Get AI regime assessment
+            const regimeAssessment = await marketRegimeAI.assessMarketRegime(analysisData);
+            const regimeInfo = marketRegimeAI.getRegimeInfo(regimeAssessment.regime);
+
+            // Create comprehensive regime report
+            const embed = new EmbedBuilder()
+                .setTitle(`🧠 AI Market Regime Analysis - ${config.trading.asset}`)
+                .setDescription(`**Current Market State: ${regimeInfo.emoji} ${regimeAssessment.regime}**`)
+                .setColor(regimeInfo.color)
+                .addFields(
+                    {
+                        name: "📊 Assessment Details",
+                        value: `**Confidence:** ${regimeAssessment.confidence}/10\n**Trading Bias:** ${regimeInfo.tradingBias}\n**Risk Multiplier:** ${regimeInfo.riskMultiplier}x`,
+                        inline: true
+                    },
+                    {
+                        name: "🔍 Key Signals",
+                        value: regimeAssessment.signals || 'Mixed signals detected',
+                        inline: true
+                    },
+                    {
+                        name: "📈 Market Outlook",
+                        value: regimeAssessment.outlook || 'Monitor for changes',
+                        inline: false
+                    },
+                    {
+                        name: "🎯 AI Reasoning",
+                        value: regimeAssessment.reasoning || 'Technical analysis completed',
+                        inline: false
+                    }
+                )
+                .setFooter({ 
+                    text: `AI Analysis • Confidence: ${regimeAssessment.confidence}/10 • ${new Date().toLocaleTimeString()}`,
+                    iconURL: "https://cdn.discordapp.com/embed/avatars/2.png"
+                })
+                .setTimestamp(new Date());
+
+            // Add trading recommendations
+            if (regimeAssessment.recommendations && regimeAssessment.recommendations.length > 0) {
+                const recommendationsText = regimeAssessment.recommendations.join('\n');
+                embed.addFields({
+                    name: "💡 Trading Recommendations",
+                    value: recommendationsText,
+                    inline: false
+                });
+            }
+
+            // Add current market data context
+            const contextText = `**Price:** $${analysisData.latest_price?.toFixed(2)}\n**vs Fib Entry:** ${analysisData.latest_price > analysisData.fib_entry ? '🟢 Above' : '🔴 Below'}\n**vs Fib 0:** ${analysisData.latest_price > analysisData.wma_fib_0 ? '🟢 Above' : '🔴 Below'}\n**4hr Trend:** ${analysisData.bull_state ? '🟢 Bullish' : '🔴 Bearish'}`;
+            
+            embed.addFields({
+                name: "📋 Current Market Context",
+                value: contextText,
+                inline: true
+            });
+
+            await message.channel.send({ embeds: [embed] });
+
+        } catch (error) {
+            console.error(`[Regime Command] Error: ${error.message}`);
+            
+            const errorEmbed = new EmbedBuilder()
+                .setTitle("❌ Regime Analysis Error")
+                .setDescription(`Failed to analyze market regime: ${error.message}`)
+                .setColor(0xFF0000)
+                .addFields({
+                    name: "Possible Solutions",
+                    value: "• Check CLAUDE_API_KEY is set\n• Verify bot has access to analysis data\n• Try again in a few moments",
+                    inline: false
+                })
+                .setTimestamp(new Date());
+                
+            await message.channel.send({ embeds: [errorEmbed] });
+        }
+    }
+
+    // ==========================================================
     // /// <<<--- NEW STRATEGY COMMAND ---
     // ==========================================================
     if (command === 'strategy') {
@@ -672,7 +768,32 @@ Avg. Win ROE: +${avgWinRoe}%
         
         const configStr = JSON.stringify(config, null, 2);
         
-        // NEW: Parse strategy for AI context
+        // NEW: Get regime context for AI
+        let regimeContext = "Market regime analysis not available.";
+        if (marketRegimeAI) {
+            try {
+                const regimeAssessment = await marketRegimeAI.assessMarketRegime(analysisData);
+                const regimeInfo = marketRegimeAI.getRegimeInfo(regimeAssessment.regime);
+                
+                regimeContext = `Current Market Regime Analysis:
+                
+**Current Regime:** ${regimeAssessment.regime} ${regimeInfo.emoji}
+**Confidence:** ${regimeAssessment.confidence}/10
+**Trading Bias:** ${regimeInfo.tradingBias}
+**Risk Multiplier:** ${regimeInfo.riskMultiplier}x
+
+**AI Reasoning:** ${regimeAssessment.reasoning}
+**Key Signals:** ${regimeAssessment.signals}
+**Market Outlook:** ${regimeAssessment.outlook}
+
+**Trading Recommendations:**
+${Array.isArray(regimeAssessment.recommendations) ? regimeAssessment.recommendations.join('\n') : 'Standard risk management applies'}`;
+            } catch (error) {
+                regimeContext = "Regime analysis temporarily unavailable.";
+            }
+        }
+
+        // Parse strategy for AI context
         const strategyAnalysis = parseStrategyFromCode(strategyCode);
         const strategyContext = strategyCode ? 
             `My current trading strategy logic (from SignalGenerator.js):
@@ -713,6 +834,8 @@ ${strategyCode.substring(0, 500)}...
         \`\`\`json
         ${analysisDataStr}
         \`\`\`
+        
+        ${regimeContext}
         
         ${strategyContext}
         
