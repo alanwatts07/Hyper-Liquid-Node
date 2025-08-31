@@ -1,5 +1,18 @@
 // src/app.js
-import config from './config.js';
+import path from 'path';
+
+// Check if this is being run as a token-specific instance
+let config;
+if (process.env.TOKEN_SYMBOL && process.env.TOKEN_CONFIG_PATH) {
+    console.log(`[${process.env.TOKEN_SYMBOL}] Loading token-specific configuration...`);
+    const configModule = await import(path.resolve(process.env.TOKEN_CONFIG_PATH));
+    config = configModule.default;
+    console.log(`[${process.env.TOKEN_SYMBOL}] ✅ Configuration loaded for ${config.trading.asset}`);
+} else {
+    // Default single-token mode
+    const configModule = await import('./config.js');
+    config = configModule.default;
+}
 import DatabaseManager from './database/DatabaseManager.js';
 import StateManager from './components/StateManager.js';
 import Notifier from './components/Notifier.js';
@@ -11,7 +24,7 @@ import SignalGenerator from './components/SignalGenerator.js';
 import logger from './utils/logger.js';
 import fs from 'fs/promises';
 
-const POSITION_FILE = 'position.json';
+// Position file path will be determined from config
 
 class TradingBot {
     constructor() {
@@ -26,6 +39,27 @@ class TradingBot {
         this.signalGenerator = new SignalGenerator(this.config, this.db, this.state, this.notifier);
         this.latestAnalysis = null;
         this.lastTradeTime = null;
+    }
+
+    // Helper methods to get file paths from config with fallbacks
+    getPositionFile() {
+        return this.config.files?.position || 'position.json';
+    }
+
+    getAnalysisFile() {
+        return this.config.files?.liveAnalysis || 'live_analysis.json';
+    }
+
+    getRiskFile() {
+        return this.config.files?.liveRisk || 'live_risk.json';
+    }
+
+    getManualOverrideFile() {
+        return this.config.files?.manualOverride || 'manual_override.json';
+    }
+
+    getManualCloseFile() {
+        return this.config.files?.manualClose || 'manual_close.json';
     }
 
     async start() {
@@ -51,7 +85,7 @@ class TradingBot {
             const historicalData = await this.db.getHistoricalPriceData();
             this.latestAnalysis = this.analyzer.calculate(historicalData);
             if (this.latestAnalysis) {
-                await fs.writeFile('live_analysis.json', JSON.stringify(this.latestAnalysis, null, 2));
+                await fs.writeFile(this.getAnalysisFile(), JSON.stringify(this.latestAnalysis, null, 2));
             }
             if (!this.latestAnalysis) return;
 
@@ -67,13 +101,13 @@ class TradingBot {
             }
 
             try {
-                const overrideData = JSON.parse(await fs.readFile('manual_override.json', 'utf8'));
+                const overrideData = JSON.parse(await fs.readFile(this.getManualOverrideFile(), 'utf8'));
                 if (overrideData.signal === 'buy') {
                     logger.warn("MANUAL OVERRIDE DETECTED! Forcing a 'buy' signal.");
                     signal = { type: 'buy' };
                     const stochMessage = this.latestAnalysis.stoch_rsi ? `\nStoch RSI: K=${this.latestAnalysis.stoch_rsi.k.toFixed(2)}, D=${this.latestAnalysis.stoch_rsi.d.toFixed(2)}` : '';
                     await this.notifier.send("Manual Override Triggered!", `Forcing a buy signal for testing.${stochMessage}`, "warning");
-                    await fs.unlink('manual_override.json');
+                    await fs.unlink(this.getManualOverrideFile());
                 }
             } catch (error) {
                 if (error.code !== 'ENOENT') {
@@ -102,8 +136,8 @@ class TradingBot {
                 if (tradeResult.success) {
                     this.state.setInPosition(true);
                     this.lastTradeTime = new Date();
-                    await fs.writeFile(POSITION_FILE, JSON.stringify(tradeResult.filledOrder, null, 2));
-                    logger.info(`Created ${POSITION_FILE} for new trade.`);
+                    await fs.writeFile(this.getPositionFile(), JSON.stringify(tradeResult.filledOrder, null, 2));
+                    logger.info(`Created ${this.getPositionFile()} for new trade.`);
                 }
             }
         } catch (error) {
@@ -121,7 +155,7 @@ class TradingBot {
         try {
             // ... (manual close logic remains the same)
             try {
-                const overrideData = JSON.parse(await fs.readFile('manual_close.json', 'utf8'));
+                const overrideData = JSON.parse(await fs.readFile(this.getManualCloseFile(), 'utf8'));
                 if (overrideData.signal === 'close') {
                     logger.warn("MANUAL CLOSE DETECTED FROM DISCORD! Closing position now.");
                     await this.notifier.send("Manual Close Triggered!", "Closing position due to !panic command from Discord.", "warning");
@@ -135,9 +169,9 @@ class TradingBot {
                         if (closeResult.success) {
                             this.state.setInPosition(false);
                             this.riskManager.clearPositionState(asset);
-                            await fs.unlink(POSITION_FILE).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
-                            await fs.unlink('live_risk.json').catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
-                            await fs.unlink('manual_close.json'); 
+                            await fs.unlink(this.getPositionFile()).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
+                            await fs.unlink(this.getRiskFile()).catch(e => { if (e.code !== 'ENOENT') logger.error(e); });
+                            await fs.unlink(this.getManualCloseFile()); 
                             logger.info("Position closed successfully via manual override.");
                         }
                     }
@@ -145,7 +179,7 @@ class TradingBot {
                 }
             } catch (error) {
                 if (error.code !== 'ENOENT') {
-                    logger.error(`Error reading manual_close.json file: ${error.message}`);
+                    logger.error(`Error reading ${this.getManualCloseFile()} file: ${error.message}`);
                 }
             }
 
@@ -163,11 +197,11 @@ class TradingBot {
                 logger.warn(`Could not find live position for ${asset} on the exchange. Assuming it was closed manually.`);
                 this.state.setInPosition(false);
                 this.riskManager.clearPositionState(asset); 
-                await fs.unlink(POSITION_FILE).catch(e => {
-                    if (e.code !== 'ENOENT') logger.error(`Failed to delete stale ${POSITION_FILE}: ${e.message}`);
+                await fs.unlink(this.getPositionFile()).catch(e => {
+                    if (e.code !== 'ENOENT') logger.error(`Failed to delete stale ${this.getPositionFile()}: ${e.message}`);
                 });
-                await fs.unlink('live_risk.json').catch(e => {
-                    if (e.code !== 'ENOENT') logger.error(`Failed to delete stale live_risk.json: ${e.message}`);
+                await fs.unlink(this.getRiskFile()).catch(e => {
+                    if (e.code !== 'ENOENT') logger.error(`Failed to delete stale ${this.getRiskFile()}: ${e.message}`);
                 });
                 logger.info("Successfully cleaned up stale position files.");
                 return;
@@ -200,7 +234,7 @@ class TradingBot {
                 liveTakeProfitPercentage: action.liveTakeProfitPercentage,
                 liveStopLossPercentage: action.liveStopLossPercentage
             };
-            await fs.writeFile('live_risk.json', JSON.stringify(riskData, null, 2));
+            await fs.writeFile(this.getRiskFile(), JSON.stringify(riskData, null, 2));
 
             if (action.shouldClose) {
                 await this.notifier.send(`${action.reason} Hit!`, `Closing position for ${asset}. Trigger Value: ${action.value}`, "warning");
@@ -209,11 +243,11 @@ class TradingBot {
                 if (closeResult.success) {
                     this.state.setInPosition(false);
                     this.riskManager.clearPositionState(asset); 
-                    await fs.unlink(POSITION_FILE).catch(e => {
-                        if (e.code !== 'ENOENT') logger.error(`Failed to delete ${POSITION_FILE}: ${e.message}`);
+                    await fs.unlink(this.getPositionFile()).catch(e => {
+                        if (e.code !== 'ENOENT') logger.error(`Failed to delete ${this.getPositionFile()}: ${e.message}`);
                     });
-                    await fs.unlink('live_risk.json').catch(e => {
-                        if (e.code !== 'ENOENT') logger.error(`Failed to delete live_risk.json: ${e.message}`);
+                    await fs.unlink(this.getRiskFile()).catch(e => {
+                        if (e.code !== 'ENOENT') logger.error(`Failed to delete ${this.getRiskFile()}: ${e.message}`);
                     });
                     logger.info(`Cleaned up position files after closing trade.`);
                 }

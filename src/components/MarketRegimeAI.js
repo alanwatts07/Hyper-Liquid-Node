@@ -7,6 +7,11 @@ export default class MarketRegimeAI {
         this.db = databaseManager;
         this.claudeClient = null;
         
+        // Rate limiting for auto assessments
+        this.lastAutoAssessments = new Map(); // token -> timestamp
+        this.autoRateLimitMinutes = 10;
+        this.cachedAutoAssessments = new Map(); // token -> cached result
+        
         // Initialize Claude AI if available
         if (process.env.CLAUDE_API_KEY) {
             this.claudeClient = new Anthropic({
@@ -61,9 +66,31 @@ export default class MarketRegimeAI {
         };
     }
 
-    async assessMarketRegime(analysisData, priceHistory = null) {
+    async assessMarketRegime(analysisData, priceHistory = null, source = 'auto', token = null) {
         if (!this.claudeClient) {
             throw new Error('Claude AI not configured. Set CLAUDE_API_KEY environment variable.');
+        }
+
+        // Rate limiting for auto calls only
+        if (source === 'auto' && token) {
+            const now = Date.now();
+            const lastAssessment = this.lastAutoAssessments.get(token);
+            
+            if (lastAssessment) {
+                const timeSinceLastMs = now - lastAssessment;
+                const rateLimitMs = this.autoRateLimitMinutes * 60 * 1000;
+                
+                if (timeSinceLastMs < rateLimitMs) {
+                    const minutesRemaining = Math.ceil((rateLimitMs - timeSinceLastMs) / 60000);
+                    console.log(`[MarketRegimeAI] ${token}: Rate limited, returning cached result (${minutesRemaining}min remaining)`);
+                    
+                    // Return cached result if available
+                    const cached = this.cachedAutoAssessments.get(token);
+                    if (cached) {
+                        return cached;
+                    }
+                }
+            }
         }
 
         try {
@@ -77,6 +104,8 @@ export default class MarketRegimeAI {
             
             // Create comprehensive market analysis prompt
             const regimePrompt = this.buildRegimeAnalysisPrompt(analysisData, marketMetrics, priceHistory);
+
+            console.log(`[MarketRegimeAI] ${token || 'Unknown'}: Performing ${source} regime assessment`);
 
             // Get AI assessment
             const response = await this.claudeClient.messages.create({
@@ -92,8 +121,15 @@ export default class MarketRegimeAI {
             // Add trading recommendations
             assessment.recommendations = this.generateTradingRecommendations(assessment);
             
-            // Store assessment for future analysis
-            await this.storeRegimeAssessment(assessment);
+            // Store assessment and update cache/timestamps for auto calls only
+            if (source === 'auto') {
+                await this.storeRegimeAssessment(assessment);
+                
+                if (token) {
+                    this.lastAutoAssessments.set(token, Date.now());
+                    this.cachedAutoAssessments.set(token, assessment);
+                }
+            }
             
             return assessment;
 
@@ -125,15 +161,15 @@ Be precise and concise. Focus on actionable insights.`;
     }
 
     buildRegimeAnalysisPrompt(analysisData, marketMetrics, priceHistory) {
-        const recentPrices = priceHistory.slice(-24).map(p => p.close);
-        const priceChange24h = ((recentPrices[recentPrices.length - 1] - recentPrices[0]) / recentPrices[0] * 100).toFixed(2);
+        const recentPrices = priceHistory.slice(-240).map(p => p.close); // 4 hours of 1-minute data
+        const priceChange4h = ((recentPrices[recentPrices.length - 1] - recentPrices[0]) / recentPrices[0] * 100).toFixed(2);
         
         return `Analyze current market regime for ${this.config.trading.asset}:
 
 CURRENT MARKET STATE:
 - Asset: ${this.config.trading.asset}
 - Current Price: $${analysisData.latest_price?.toFixed(2)}
-- 24h Change: ${priceChange24h}%
+- 4h Change: ${priceChange4h}%
 - Bull State: ${analysisData.bull_state ? 'BULLISH' : 'BEARISH'}
 
 FIBONACCI ANALYSIS:
@@ -150,20 +186,37 @@ STOCHASTIC RSI (4HR):
 - K: ${analysisData.stoch_rsi_4hr?.k?.toFixed(2)} ${this.getStochLabel(analysisData.stoch_rsi_4hr?.k)}
 - D: ${analysisData.stoch_rsi_4hr?.d?.toFixed(2)} ${this.getStochLabel(analysisData.stoch_rsi_4hr?.d)}
 
-MARKET METRICS:
-- Volatility (24h): ${marketMetrics.volatility?.toFixed(2)}%
-- Price Range (24h): ${marketMetrics.priceRange?.toFixed(2)}%
+MARKET METRICS (4h timeframe):
+- Volatility: ${marketMetrics.volatility?.toFixed(2)}%
+- Price Range: ${marketMetrics.priceRange?.toFixed(2)}%
 - Support/Resistance Respect: ${marketMetrics.levelRespect}
 - Recent Breakouts: ${marketMetrics.breakouts}
 
-RECENT PRICE ACTION (last 12 candles):
-${recentPrices.slice(-12).map((price, i) => `${i+1}: $${price.toFixed(2)}`).join(', ')}
+RECENT PRICE ACTION (last 30 minutes):
+${recentPrices.slice(-30).map((price, i) => `${i+1}: $${price.toFixed(2)}`).join(', ')}
 
-Based on this comprehensive technical analysis, classify the current market regime and provide actionable insights.`;
+HOURLY AVERAGES (last 4 hours):
+${this.calculateHourlyAverages(recentPrices)}
+
+Based on this comprehensive 4-hour technical analysis, classify the current market regime and provide actionable insights.`;
+    }
+
+    calculateHourlyAverages(recentPrices) {
+        if (recentPrices.length < 240) return 'Insufficient data for 4-hour analysis';
+        
+        const hour1Avg = (recentPrices.slice(-240, -180).reduce((sum, p) => sum + p, 0) / 60).toFixed(2);
+        const hour2Avg = (recentPrices.slice(-180, -120).reduce((sum, p) => sum + p, 0) / 60).toFixed(2);
+        const hour3Avg = (recentPrices.slice(-120, -60).reduce((sum, p) => sum + p, 0) / 60).toFixed(2);
+        const hour4Avg = (recentPrices.slice(-60).reduce((sum, p) => sum + p, 0) / Math.min(60, recentPrices.slice(-60).length)).toFixed(2);
+        
+        return `Hour 1 (4h ago): $${hour1Avg}
+Hour 2 (3h ago): $${hour2Avg}
+Hour 3 (2h ago): $${hour3Avg}
+Hour 4 (1h ago): $${hour4Avg}`;
     }
 
     async calculateMarketMetrics(analysisData, priceHistory) {
-        const recentPrices = priceHistory.slice(-24).map(p => p.close);
+        const recentPrices = priceHistory.slice(-240).map(p => p.close); // Use 4 hours of data
         
         // Calculate volatility (standard deviation of returns)
         const returns = [];
@@ -290,7 +343,7 @@ Based on this comprehensive technical analysis, classify the current market regi
         return recommendations;
     }
 
-    async getRecentPriceHistory(limit = 100) {
+    async getRecentPriceHistory(limit = 300) { // 300 minutes = 5 hours of data
         try {
             const prices = await this.db.db.all(
                 'SELECT price as close, timestamp FROM prices ORDER BY timestamp DESC LIMIT ?',

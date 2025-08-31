@@ -6,11 +6,16 @@
   "type": "module",
   "scripts": {
     "start": "node src/app.js",
+    "start:multi": "node multi-launcher.js",
+    "start:discord": "node discord_bot.js",
+    "start:discord-multi": "node discord_bot_multi.js",
+    "start:token": "node src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.98",
     "@anthropic-ai/sdk": "^0.60.0",
     "@google/generative-ai": "^0.24.1",
     "@nktkas/hyperliquid": "latest",

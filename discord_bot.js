@@ -568,8 +568,8 @@ Avg. Win ROE: +${avgWinRoe}%
                 return message.channel.send("❌ No analysis data available. Bot may not be running.");
             }
 
-            // Get AI regime assessment
-            const regimeAssessment = await marketRegimeAI.assessMarketRegime(analysisData);
+            // Get AI regime assessment (manual call from Discord)
+            const regimeAssessment = await marketRegimeAI.assessMarketRegime(analysisData, null, 'manual', config.trading.asset);
             const regimeInfo = marketRegimeAI.getRegimeInfo(regimeAssessment.regime);
 
             // Create comprehensive regime report
@@ -772,7 +772,7 @@ Avg. Win ROE: +${avgWinRoe}%
         let regimeContext = "Market regime analysis not available.";
         if (marketRegimeAI) {
             try {
-                const regimeAssessment = await marketRegimeAI.assessMarketRegime(analysisData);
+                const regimeAssessment = await marketRegimeAI.assessMarketRegime(analysisData, null, 'manual', config.trading.asset);
                 const regimeInfo = marketRegimeAI.getRegimeInfo(regimeAssessment.regime);
                 
                 regimeContext = `Current Market Regime Analysis:
