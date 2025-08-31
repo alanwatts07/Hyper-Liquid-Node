@@ -2,17 +2,12 @@
 
 ## 🚀 Quick Start
 
-### 1. Start Multi-Token System
+### 1. Start Multi-Token System + DISCORD
 ```bash
 npm run start:multi
 ```
 This starts all enabled tokens (AVAX, SOL, DOGE by default).
 
-### 2. Start Multi-Token Discord Bot
-```bash
-npm run start:discord-multi
-```
-This starts the Discord bot that can control all tokens.
 
 ## 🎯 Available Tokens
 

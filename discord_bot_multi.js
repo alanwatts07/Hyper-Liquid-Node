@@ -207,10 +207,10 @@ function formatContextForAI(context) {
         // Current position
         if (data.position) {
             formatted += `   • POSITION: LONG ${data.position.asset}\n`;
-            formatted += `     - Entry: $${data.position.entryPrice?.toFixed(2)}\n`;
-            formatted += `     - Current: $${data.position.currentPrice?.toFixed(2)}\n`;
-            formatted += `     - ROE: ${data.position.roe}\n`;
-            formatted += `     - Stop: ${data.position.fibStopActive ? 'Fib Trail' : 'Fixed'} @ $${data.position.stopPrice?.toFixed(2)}\n`;
+            formatted += `     - Entry: $${data.position.entryPrice?.toFixed(2) || 'N/A'}\n`;
+            formatted += `     - Current: $${data.position.currentPrice?.toFixed(2) || 'N/A'}\n`;
+            formatted += `     - ROE: ${data.position.roe || '0.00%'}\n`;
+            formatted += `     - Stop: ${data.position.fibStopActive ? 'Fib Trail' : 'Fixed'} @ $${data.position.stopPrice?.toFixed(2) || 'N/A'}\n`;
         } else {
             formatted += `   • POSITION: None (monitoring for entries)\n`;
         }
@@ -577,6 +577,24 @@ client.on('ready', async () => {
 
     multiManager.on('emergencyShutdown', ({ reason, tokensAffected }) => {
         sendNotification(`🚨 **EMERGENCY SHUTDOWN**\n**Reason:** ${reason}\n**Tokens affected:** ${tokensAffected.join(', ')}`, 0xFF0000);
+    });
+
+    multiManager.on('emergencyTradingHalt', ({ reason, tokensAffected }) => {
+        sendNotification(`🛑 **EMERGENCY TRADING HALT**\n**Reason:** ${reason}\n**Tokens halted:** ${tokensAffected.join(', ')}\n\n📊 *Data collection continues*`, 0xFF8C00);
+    });
+
+    multiManager.on('emergencyStartup', ({ reason, tokensStarted, tokensFailed, summary }) => {
+        const color = tokensFailed.length > 0 ? 0xFFFF00 : 0x00FF00; // Yellow if some failed, green if all succeeded
+        let message = `🚀 **EMERGENCY STARTUP COMPLETE**\n**Reason:** ${reason}\n**Summary:** ${summary}`;
+        
+        if (tokensStarted.length > 0) {
+            message += `\n**✅ Started:** ${tokensStarted.join(', ')}`;
+        }
+        if (tokensFailed.length > 0) {
+            message += `\n**❌ Failed:** ${tokensFailed.join(', ')}`;
+        }
+        
+        sendNotification(message, color);
     });
 
     multiManager.on('regimeUpdated', ({ token, regimeAssessment }) => {
@@ -981,6 +999,94 @@ client.on('messageCreate', async (message) => {
         }
     }
 
+    if (command === 'emergency-halt' || command === 'emergency-shutdown') {
+        if (!isOwner(message.author.id)) {
+            return message.channel.send("❌ Access denied. This command is owner-only.");
+        }
+
+        const reason = args.join(' ') || 'Manual emergency trading halt via Discord';
+        
+        await message.channel.send("🛑 **INITIATING EMERGENCY TRADING HALT**\nStopping all trading operations while maintaining data collection...");
+        
+        try {
+            const haltedTokens = await multiManager.emergencyTradingHalt(reason);
+            
+            const embed = new EmbedBuilder()
+                .setTitle("🛑 Emergency Trading Halt Complete")
+                .setDescription("All trading operations have been halted. Data collection continues.")
+                .setColor(0xFF8C00)
+                .addFields(
+                    {
+                        name: "Halted Tokens",
+                        value: haltedTokens.length > 0 ? haltedTokens.join(', ') : 'None were running',
+                        inline: true
+                    },
+                    {
+                        name: "Status",
+                        value: "📊 Data collection: **ACTIVE**\n💰 Trading: **DISABLED**",
+                        inline: true
+                    },
+                    {
+                        name: "Recovery",
+                        value: "Use `!emergency-startup` to restore trading",
+                        inline: false
+                    }
+                )
+                .setTimestamp(new Date());
+                
+            await message.channel.send({ embeds: [embed] });
+            
+        } catch (error) {
+            await message.channel.send(`❌ Error during emergency halt: ${error.message}`);
+        }
+    }
+
+    if (command === 'emergency-startup' || command === 'emergency-start') {
+        if (!isOwner(message.author.id)) {
+            return message.channel.send("❌ Access denied. This command is owner-only.");
+        }
+
+        const reason = args.join(' ') || 'Manual emergency startup via Discord';
+        
+        await message.channel.send("🚀 **INITIATING EMERGENCY STARTUP**\nRestarting default trading tokens (AVAX, SOL, DOGE)...");
+        
+        try {
+            const result = await multiManager.emergencyStartup(reason);
+            
+            const embed = new EmbedBuilder()
+                .setTitle("🚀 Emergency Startup Complete")
+                .setDescription("Default tokens have been restored to trading mode")
+                .setColor(result.failedTokens.length > 0 ? 0xFFFF00 : 0x00FF00)
+                .addFields(
+                    {
+                        name: "✅ Successfully Started",
+                        value: result.startedTokens.length > 0 ? result.startedTokens.join(', ') : 'None',
+                        inline: true
+                    }
+                )
+                .setTimestamp(new Date());
+                
+            if (result.failedTokens.length > 0) {
+                embed.addFields({
+                    name: "❌ Failed to Start",
+                    value: result.failedTokens.join(', '),
+                    inline: true
+                });
+            }
+            
+            embed.addFields({
+                name: "Current Status",
+                value: `📊 Data collection: **ACTIVE**\n💰 Trading: **RESTORED**\n🎯 Active tokens: **${result.startedTokens.length}/3**`,
+                inline: false
+            });
+                
+            await message.channel.send({ embeds: [embed] });
+            
+        } catch (error) {
+            await message.channel.send(`❌ Error during emergency startup: ${error.message}`);
+        }
+    }
+
     if (command === 'status') {
         const token = args[0]?.toUpperCase();
         
@@ -995,24 +1101,51 @@ client.on('messageCreate', async (message) => {
             const status = multiManager.getStatus();
             const tokenStatus = status.tokens[token];
 
+            // Use same logic as !tokens command for accurate status detection
+            let isActuallyRunning = false;
+            let estimatedUptime = 0;
+            
+            try {
+                // Check if analysis file exists and is recent (same as !tokens command)
+                const filePath = path.resolve(multiConfig.tokens[token].dataDir, 'live_analysis.json');
+                const stats = await fs.stat(filePath);
+                const now = new Date();
+                const fileAge = now - stats.mtime;
+                
+                // Consider running if file was modified within last 10 minutes (same threshold as !tokens)
+                if (fileAge < 10 * 60 * 1000) {
+                    isActuallyRunning = true;
+                    estimatedUptime = fileAge; // Use file age as uptime estimate
+                }
+                
+                console.log(`[Status Debug] ${token}: File age ${Math.round(fileAge/60000)}min, running: ${isActuallyRunning}`);
+            } catch (error) {
+                console.log(`[Status Debug] ${token}: No analysis file - ${error.message}`);
+            }
+
             const embed = new EmbedBuilder()
                 .setTitle(`📊 ${token} Status Report`)
                 .setColor(getTokenColor(token))
                 .setTimestamp(new Date());
 
-            // Bot status
+            // Use file-based status detection instead of multi-manager status
+            const isRunning = isActuallyRunning;
+            const isEnabled = tokenStatus?.enabled !== false; // Default to enabled unless explicitly disabled
+            const uptime = estimatedUptime;
+            
             embed.addFields({
                 name: "🤖 Bot Status",
-                value: `**Status:** ${tokenStatus.running ? '🟢 Running' : '🔴 Stopped'}\n**Enabled:** ${tokenStatus.enabled ? 'Yes' : 'No'}\n**Uptime:** ${Math.round(tokenStatus.uptime / 60000)}min`,
+                value: `**Status:** ${isRunning ? '🟢 Running' : '🔴 Stopped'}\n**Enabled:** ${isEnabled ? 'Yes' : 'No'}\n**Uptime:** ${Math.round(uptime / 60000)}min`,
                 inline: true
             });
 
             // Position info
             if (riskData) {
-                const pnlEmoji = riskData.roe.includes('-') ? "🔴" : "🟢";
+                const roe = riskData.roe || '0.00%';
+                const pnlEmoji = (typeof roe === 'string' && roe.includes('-')) ? "🔴" : "🟢";
                 embed.addFields({
                     name: `💼 Position: ${riskData.asset}`,
-                    value: `**Entry:** $${riskData.entryPrice.toFixed(2)}\n**Current:** $${riskData.currentPrice.toFixed(2)}\n**ROE:** ${pnlEmoji} ${riskData.roe}`,
+                    value: `**Entry:** $${riskData.entryPrice?.toFixed(2) || 'N/A'}\n**Current:** $${riskData.currentPrice?.toFixed(2) || 'N/A'}\n**ROE:** ${pnlEmoji} ${roe}`,
                     inline: true
                 });
             } else {
@@ -1037,6 +1170,15 @@ client.on('messageCreate', async (message) => {
             // Multi-token status overview
             const status = multiManager.getStatus();
             
+            // Debug: Log the multi-token status data
+            console.log('[Multi-Status Debug] Full status:', status);
+            console.log('[Multi-Status Debug] Tokens:', Object.keys(status.tokens).map(token => ({
+                token,
+                running: status.tokens[token]?.running,
+                enabled: status.tokens[token]?.enabled,
+                status: status.tokens[token]?.status
+            })));
+            
             const embed = new EmbedBuilder()
                 .setTitle("📊 Multi-Token Status Overview")
                 .setColor(0x00FFFF)
@@ -1047,16 +1189,35 @@ client.on('messageCreate', async (message) => {
             let statusText = "";
 
             for (const [token, tokenStatus] of Object.entries(status.tokens)) {
-                if (tokenStatus.running) runningCount++;
+                // Use file-based detection like !tokens command
+                let isActuallyRunning = false;
                 
-                const statusEmoji = tokenStatus.running ? '🟢' : '🔴';
-                statusText += `${statusEmoji} **${token}**: ${tokenStatus.status}\n`;
+                try {
+                    const filePath = path.resolve(multiConfig.tokens[token].dataDir, 'live_analysis.json');
+                    const stats = await fs.stat(filePath);
+                    const fileAge = Date.now() - stats.mtime;
+                    
+                    // Same logic as !tokens: running if file modified within 10 minutes
+                    if (fileAge < 10 * 60 * 1000) {
+                        isActuallyRunning = true;
+                    }
+                } catch (error) {
+                    // No file = not running
+                    isActuallyRunning = false;
+                }
+                
+                if (isActuallyRunning) runningCount++;
+                
+                const statusEmoji = isActuallyRunning ? '🟢' : '🔴';
+                const actualStatus = isActuallyRunning ? 'RUNNING' : 'STOPPED';
+                statusText += `${statusEmoji} **${token}**: ${actualStatus}\n`;
                 
                 // Check for positions
                 const riskData = await readTokenAnalysisFile(token, 'live_risk.json');
                 if (riskData) {
                     totalPositions++;
-                    statusText += `   └ Position: ${riskData.roe}\n`;
+                    const roe = riskData.roe || '0.00%';
+                    statusText += `   └ Position: ${roe}\n`;
                 }
             }
 
@@ -1096,7 +1257,7 @@ client.on('messageCreate', async (message) => {
                 },
                 {
                     name: "🚨 **Emergency Commands (Owner Only)**",
-                    value: `\`!panic [TOKEN|ALL]\` - Emergency stop token or all\n\`!regime-rules\` - View regime-based rules`,
+                    value: `\`!panic [TOKEN|ALL]\` - Emergency stop token or all (kills processes)\n\`!emergency-halt [reason]\` - Stop trading, keep data collection\n\`!emergency-startup [reason]\` - Restart AVAX, SOL, DOGE\n\`!regime-rules\` - View regime-based rules`,
                     inline: false
                 },
                 {

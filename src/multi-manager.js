@@ -449,6 +449,130 @@ class MultiTokenManager extends EventEmitter {
         this.emit('emergencyShutdown', { reason, tokensAffected: runningTokens });
     }
 
+    async emergencyTradingHalt(reason) {
+        console.log(`[MultiManager] 🛑 EMERGENCY TRADING HALT: ${reason}`);
+        console.log(`[MultiManager] 📊 Data collection will continue, trading disabled`);
+        
+        const runningTokens = Array.from(this.processes.keys());
+        const haltedTokens = [];
+        
+        // Set all tokens to non-trading mode by setting size multiplier to 0
+        for (const token of runningTokens) {
+            try {
+                const tokenConfig = this.config.tokens[token];
+                const riskFilePath = path.resolve(tokenConfig.dataDir, 'live_risk.json');
+                
+                // Read existing risk data
+                let existingRiskData = {};
+                try {
+                    const data = await fs.readFile(riskFilePath, 'utf8');
+                    existingRiskData = JSON.parse(data);
+                } catch (error) {
+                    // File doesn't exist, create minimal structure
+                    existingRiskData = {};
+                }
+                
+                // Set emergency trading halt parameters
+                const emergencyRiskData = {
+                    ...existingRiskData,
+                    timestamp: new Date().toISOString(),
+                    emergencyTradingHalt: true,
+                    emergencyReason: reason,
+                    sizeMultiplier: 0.0,  // Disable trading
+                    strategy: 'EMERGENCY_HALT',
+                    regimeDescription: `Emergency trading halt: ${reason}`,
+                    originalSizeMultiplier: existingRiskData.sizeMultiplier || 1.0
+                };
+                
+                await fs.writeFile(riskFilePath, JSON.stringify(emergencyRiskData, null, 2));
+                haltedTokens.push(token);
+                
+                console.log(`[MultiManager] 🛑 ${token}: Trading halted, data collection continues`);
+                
+            } catch (error) {
+                console.error(`[MultiManager] Error halting trading for ${token}: ${error.message}`);
+            }
+        }
+        
+        this.emit('emergencyTradingHalt', { reason, tokensAffected: haltedTokens });
+        return haltedTokens;
+    }
+
+    async emergencyStartup(reason = 'Manual emergency startup') {
+        console.log(`[MultiManager] 🚀 EMERGENCY STARTUP: ${reason}`);
+        
+        // Define default tokens to restart (the main three)
+        const defaultTokens = ['AVAX', 'SOL', 'DOGE'];
+        const startedTokens = [];
+        const failedTokens = [];
+        
+        for (const token of defaultTokens) {
+            try {
+                const tokenConfig = this.config.tokens[token];
+                
+                // Re-enable token in config
+                tokenConfig.enabled = true;
+                
+                // Clear emergency halt from risk file
+                const riskFilePath = path.resolve(tokenConfig.dataDir, 'live_risk.json');
+                try {
+                    const data = await fs.readFile(riskFilePath, 'utf8');
+                    const riskData = JSON.parse(data);
+                    
+                    if (riskData.emergencyTradingHalt) {
+                        // Restore original parameters
+                        const restoredRiskData = {
+                            ...riskData,
+                            timestamp: new Date().toISOString(),
+                            emergencyTradingHalt: false,
+                            emergencyReason: null,
+                            sizeMultiplier: riskData.originalSizeMultiplier || 1.0,
+                            strategy: 'RESTORED',
+                            regimeDescription: `Trading restored: ${reason}`,
+                            originalSizeMultiplier: undefined
+                        };
+                        
+                        await fs.writeFile(riskFilePath, JSON.stringify(restoredRiskData, null, 2));
+                        console.log(`[MultiManager] 🟢 ${token}: Trading parameters restored`);
+                    }
+                } catch (error) {
+                    console.log(`[MultiManager] ${token}: No risk file to restore, using defaults`);
+                }
+                
+                // Start the token if not already running
+                const isRunning = this.processes.has(token);
+                if (!isRunning) {
+                    const started = await this.startToken(token);
+                    if (started) {
+                        startedTokens.push(token);
+                        console.log(`[MultiManager] 🟢 ${token}: Successfully restarted`);
+                    } else {
+                        failedTokens.push(token);
+                        console.error(`[MultiManager] ❌ ${token}: Failed to restart`);
+                    }
+                } else {
+                    startedTokens.push(token);
+                    console.log(`[MultiManager] 🟢 ${token}: Already running, trading restored`);
+                }
+                
+            } catch (error) {
+                failedTokens.push(token);
+                console.error(`[MultiManager] ❌ ${token}: Startup error - ${error.message}`);
+            }
+        }
+        
+        console.log(`[MultiManager] ✅ Emergency startup complete: ${startedTokens.length} started, ${failedTokens.length} failed`);
+        
+        this.emit('emergencyStartup', { 
+            reason, 
+            tokensStarted: startedTokens, 
+            tokensFailed: failedTokens,
+            summary: `${startedTokens.length}/${defaultTokens.length} tokens operational`
+        });
+        
+        return { startedTokens, failedTokens };
+    }
+
     startHealthMonitoring() {
         this.healthCheckInterval = setInterval(() => {
             this.checkProcessHealth();
