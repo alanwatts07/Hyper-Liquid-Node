@@ -9,13 +9,13 @@ export default {
         ...baseConfig.trading,
         asset: 'DOGE',
         tradeUsdSize: 500, // Smaller size for meme coin
-        leverage: 2, // Conservative leverage for volatile asset
+        leverage: 10, // Conservative leverage for volatile asset
         
         // DOGE-specific trade blockers - very conservative
         tradeBlockers: {
             ...baseConfig.trading.tradeBlockers,
             blockOn4hrStoch: true,
-            blockOnPriceTrend: true,
+            blockOnPriceTrend: false,
             blockOn5minStoch: true // Use all blockers for DOGE
         }
     },

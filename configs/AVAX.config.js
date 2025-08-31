@@ -8,14 +8,14 @@ export default {
     trading: {
         ...baseConfig.trading,
         asset: 'AVAX',
-        tradeUsdSize: 800,
-        leverage: 3,
+        tradeUsdSize: 600,
+        leverage: 10,
         
         // AVAX-specific trade blockers
         tradeBlockers: {
             ...baseConfig.trading.tradeBlockers,
-            blockOn4hrStoch: true,
-            blockOnPriceTrend: true,
+            blockOn4hrStoch: false,
+            blockOnPriceTrend: false,
             blockOn5minStoch: false // AVAX moves fast like SOL
         }
     },

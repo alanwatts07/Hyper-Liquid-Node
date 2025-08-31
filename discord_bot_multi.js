@@ -7,15 +7,34 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import multiConfig from './multi.config.js';
 import MultiTokenManager from './src/multi-manager.js';
+import Anthropic from '@anthropic-ai/sdk';
 
 // Configuration
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
 const OWNER_USER_ID = process.env.DISCORD_OWNER_ID;
+const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 
 if (!BOT_TOKEN || !CHANNEL_ID) {
     console.error("[!!!] CRITICAL: DISCORD_BOT_TOKEN or DISCORD_CHANNEL_ID is not set in .env file.");
     process.exit(1);
+}
+
+// Initialize Claude AI
+let claudeClient;
+if (CLAUDE_API_KEY) {
+    try {
+        claudeClient = new Anthropic({
+            apiKey: CLAUDE_API_KEY,
+        });
+        console.log("[*] Anthropic Claude AI configured successfully.");
+    } catch (error) {
+        console.error(`[!!!] Failed to initialize Claude AI: ${error.message}`);
+        claudeClient = null;
+    }
+} else {
+    console.log("[!!!] WARNING: CLAUDE_API_KEY not found in .env. The !ask command will be disabled.");
+    claudeClient = null;
 }
 
 // Initialize Discord client
@@ -63,6 +82,165 @@ async function readTokenAnalysisFile(token, filename) {
     } catch (error) {
         return null;
     }
+}
+
+// Helper function to gather comprehensive multi-token data for AI context
+async function gatherMultiTokenContext() {
+    const context = {
+        tokens: {},
+        summary: {
+            totalTokens: 0,
+            enabledTokens: 0,
+            activePositions: 0,
+            totalRegimes: 0
+        }
+    };
+
+    for (const [token, tokenConfig] of Object.entries(multiConfig.tokens)) {
+        context.summary.totalTokens++;
+        
+        const tokenData = {
+            enabled: tokenConfig.enabled,
+            status: 'UNKNOWN',
+            position: null,
+            regime: null,
+            analysis: null,
+            lastActivity: null
+        };
+
+        if (tokenConfig.enabled) {
+            context.summary.enabledTokens++;
+
+            // Get analysis data
+            const analysisData = await readTokenAnalysisFile(token, 'live_analysis.json');
+            if (analysisData) {
+                tokenData.analysis = {
+                    price: analysisData.latest_price,
+                    fibEntry: analysisData.fib_entry,
+                    fib0: analysisData.wma_fib_0,
+                    bullState: analysisData.bull_state,
+                    stochRSI: analysisData.stoch_rsi
+                };
+            }
+
+            // Get position data
+            const riskData = await readTokenAnalysisFile(token, 'live_risk.json');
+            if (riskData) {
+                context.summary.activePositions++;
+                tokenData.position = {
+                    asset: riskData.asset,
+                    entryPrice: riskData.entryPrice,
+                    currentPrice: riskData.currentPrice,
+                    roe: riskData.roe,
+                    stopPrice: riskData.stopPrice,
+                    fibStopActive: riskData.fibStopActive
+                };
+            }
+
+            // Get most recent regime from database
+            const monitor = dbNotificationManager?.monitors?.get(token);
+            if (monitor) {
+                try {
+                    const recentRegime = await monitor.db.get(
+                        'SELECT details, timestamp FROM events WHERE event_type = ? ORDER BY id DESC LIMIT 1',
+                        ['REGIME_ASSESSMENT']
+                    );
+                    
+                    if (recentRegime) {
+                        context.summary.totalRegimes++;
+                        const regimeData = JSON.parse(recentRegime.details);
+                        tokenData.regime = {
+                            current: regimeData.regime,
+                            confidence: regimeData.confidence,
+                            signals: regimeData.signals,
+                            reasoning: regimeData.reasoning,
+                            recommendations: regimeData.recommendations,
+                            lastUpdated: recentRegime.timestamp,
+                            ageMinutes: Math.round((Date.now() - new Date(recentRegime.timestamp).getTime()) / (1000 * 60))
+                        };
+                    }
+                } catch (error) {
+                    console.error(`[Multi Ask] Error getting regime for ${token}: ${error.message}`);
+                }
+            }
+
+            // Determine overall status
+            if (tokenData.position) {
+                tokenData.status = 'IN_POSITION';
+            } else if (tokenData.analysis) {
+                tokenData.status = 'MONITORING';
+            } else {
+                tokenData.status = 'STARTING_UP';
+            }
+        } else {
+            tokenData.status = 'DISABLED';
+        }
+
+        context.tokens[token] = tokenData;
+    }
+
+    return context;
+}
+
+// Helper function to format multi-token context for AI
+function formatContextForAI(context) {
+    let formatted = `MULTI-TOKEN TRADING PORTFOLIO STATUS:\n\n`;
+    
+    // Summary
+    formatted += `📊 PORTFOLIO SUMMARY:\n`;
+    formatted += `• Total Tokens: ${context.summary.totalTokens}\n`;
+    formatted += `• Enabled Tokens: ${context.summary.enabledTokens}\n`;
+    formatted += `• Active Positions: ${context.summary.activePositions}\n`;
+    formatted += `• Regime Assessments: ${context.summary.totalRegimes}\n\n`;
+
+    // Individual token details
+    formatted += `🎯 INDIVIDUAL TOKEN STATUS:\n\n`;
+    
+    for (const [token, data] of Object.entries(context.tokens)) {
+        formatted += `**${token}** (${data.status}):\n`;
+        
+        if (!data.enabled) {
+            formatted += `   • Status: DISABLED\n\n`;
+            continue;
+        }
+
+        // Current position
+        if (data.position) {
+            formatted += `   • POSITION: LONG ${data.position.asset}\n`;
+            formatted += `     - Entry: $${data.position.entryPrice?.toFixed(2)}\n`;
+            formatted += `     - Current: $${data.position.currentPrice?.toFixed(2)}\n`;
+            formatted += `     - ROE: ${data.position.roe}\n`;
+            formatted += `     - Stop: ${data.position.fibStopActive ? 'Fib Trail' : 'Fixed'} @ $${data.position.stopPrice?.toFixed(2)}\n`;
+        } else {
+            formatted += `   • POSITION: None (monitoring for entries)\n`;
+        }
+
+        // Market regime
+        if (data.regime) {
+            formatted += `   • REGIME: ${data.regime.current} (${data.regime.confidence}/10 confidence)\n`;
+            formatted += `     - Signals: ${data.regime.signals || 'Mixed'}\n`;
+            formatted += `     - Last Update: ${data.regime.ageMinutes}min ago\n`;
+            if (data.regime.recommendations?.length > 0) {
+                formatted += `     - Recommendations: ${data.regime.recommendations.join('; ')}\n`;
+            }
+        } else {
+            formatted += `   • REGIME: Analysis pending\n`;
+        }
+
+        // Technical analysis
+        if (data.analysis) {
+            formatted += `   • TECHNICAL: Price $${data.analysis.price?.toFixed(3)} | Fib Entry $${data.analysis.fibEntry?.toFixed(3)} | Bull: ${data.analysis.bullState ? 'Yes' : 'No'}\n`;
+            if (data.analysis.stochRSI) {
+                const k = data.analysis.stochRSI.k;
+                const kState = k > 80 ? 'Overbought' : k < 20 ? 'Oversold' : 'Neutral';
+                formatted += `     - Stoch RSI: ${k?.toFixed(1)} (${kState})\n`;
+            }
+        }
+
+        formatted += `\n`;
+    }
+
+    return formatted;
 }
 
 // Database monitoring and notification system
@@ -908,7 +1086,7 @@ client.on('messageCreate', async (message) => {
             .addFields(
                 {
                     name: "📊 **Monitoring Commands**",
-                    value: `\`!tokens\` - List all tokens and their status\n\`!status [token]\` - Detailed status for token or all\n\`!regime [token]\` - Regime analysis for token or all\n\`!strategies\` - Current trading strategies and risk parameters\n\`!notifications\` - Manage notification system`,
+                    value: `\`!tokens\` - List all tokens and their status\n\`!status [token]\` - Detailed status for token or all\n\`!regime [token]\` - Regime analysis for token or all\n\`!strategies\` - Current trading strategies and risk parameters\n\`!notifications\` - Manage notification system\n\`!ask [question]\` - AI-powered portfolio analysis and consultation`,
                     inline: false
                 },
                 {
@@ -1028,27 +1206,53 @@ client.on('messageCreate', async (message) => {
                 continue;
             }
 
-            // Check if regime AI is available and get regime state
-            const regimeAI = multiManager?.regimeAIs?.get(token);
-            const status = multiManager?.getStatus();
-            const tokenStatus = status?.tokens?.[token];
+            // Get most recent regime assessment from database
+            const monitor = dbNotificationManager?.monitors?.get(token);
+            let regimeData = null;
+            
+            if (monitor) {
+                try {
+                    const recentRegime = await monitor.db.get(
+                        'SELECT details, timestamp FROM events WHERE event_type = ? ORDER BY id DESC LIMIT 1',
+                        ['REGIME_ASSESSMENT']
+                    );
+                    
+                    if (recentRegime) {
+                        regimeData = JSON.parse(recentRegime.details);
+                    }
+                } catch (error) {
+                    console.error(`[Strategies] Error getting regime for ${token}: ${error.message}`);
+                }
+            }
 
-            if (regimeAI && tokenStatus?.regime) {
-                const { regime, confidence } = tokenStatus.regime;
-                const regimeInfo = regimeAI.getRegimeInfo(regime);
+            if (regimeData) {
+                const { regime, confidence } = regimeData;
+                const regimeAI = multiManager?.regimeAIs?.get(token);
+                const regimeInfo = regimeAI ? regimeAI.getRegimeInfo(regime) : {
+                    tradingBias: 'NEUTRAL',
+                    riskMultiplier: 1.0
+                };
                 const emoji = getRegimeEmoji(regime);
                 
                 // Get regime-specific risk parameters
                 const riskParams = multiConfig.regimeRiskMultipliers[regime] || {
-                    stopLoss: tokenConfig.risk?.stopLossPercentage || 0.02,
-                    takeProfit: tokenConfig.risk?.takeProfitPercentage || 0.04,
+                    stopLoss: 0.02,
+                    takeProfit: 0.04,
                     sizeMultiplier: 1.0,
                     strategy: 'DEFAULT',
                     description: 'Using default parameters'
                 };
 
-                // Calculate adjusted trade size
-                const baseSize = tokenConfig.trading?.tradeUsdSize || 1000;
+                // Load token-specific config to get actual trade size
+                let baseSize = 1000; // Fallback default
+                try {
+                    const tokenConfigPath = multiConfig.tokens[token].configFile;
+                    const tokenConfigModule = await import(path.resolve(tokenConfigPath));
+                    baseSize = tokenConfigModule.default?.trading?.tradeUsdSize || 1000;
+                } catch (error) {
+                    console.error(`[Strategies] Error loading config for ${token}: ${error.message}`);
+                }
+                
                 const adjustedSize = Math.round(baseSize * riskParams.sizeMultiplier);
                 
                 // Determine if trading is effectively disabled
@@ -1101,6 +1305,120 @@ client.on('messageCreate', async (message) => {
         );
 
         await message.channel.send({ embeds: [embed] });
+    }
+
+    // ==========================================================
+    // /// <<<--- MULTI-TOKEN ASK COMMAND ---
+    // ==========================================================
+    if (command === 'ask') {
+        if (!claudeClient) {
+            return message.channel.send("❌ AI core not configured. Please check CLAUDE_API_KEY in environment.");
+        }
+
+        const question = args.join(' ');
+        if (!question) {
+            return message.channel.send("Please ask a question about the multi-token trading portfolio.");
+        }
+
+        await message.channel.sendTyping();
+        await message.channel.send("🧠 Analyzing multi-token portfolio and generating AI response...");
+
+        try {
+            // Gather comprehensive multi-token context
+            console.log('[Multi Ask] Gathering multi-token context...');
+            const context = await gatherMultiTokenContext();
+            const formattedContext = formatContextForAI(context);
+            
+            // Get multi-config for AI context
+            const configStr = JSON.stringify({
+                regimeRules: multiConfig.regimeRules,
+                regimeRiskMultipliers: multiConfig.regimeRiskMultipliers,
+                tokens: Object.keys(multiConfig.tokens).reduce((acc, token) => {
+                    acc[token] = {
+                        enabled: multiConfig.tokens[token].enabled,
+                        symbol: multiConfig.tokens[token].symbol
+                    };
+                    return acc;
+                }, {})
+            }, null, 2);
+
+            // AI system prompt for multi-token bot
+            const systemPrompt = `You are a sophisticated multi-token cryptocurrency trading system commander serving your "Master". You oversee multiple trading bots across different tokens (AVAX, SOL, DOGE, LTC, ADA, LINK) with AI-powered regime analysis and dynamic risk management.
+
+Your personality traits:
+- Speak like a tactical military commander - precise, authoritative, and strategic
+- Use military terminology when appropriate ("operational status", "positions", "strategic assessment")
+- Be concise but comprehensive in your analysis
+- Address your creator as "Master"
+- Focus on portfolio-level insights and cross-token correlations
+- Provide actionable intelligence rather than just data dumps
+
+Your capabilities:
+- Multi-token portfolio management with regime-based risk adjustment
+- Real-time position monitoring across all tokens
+- AI-powered market regime analysis for each asset
+- Dynamic trade sizing based on market conditions
+- Automated token enabling/disabling based on regime rules
+
+Always consider the portfolio as a whole while being able to drill down into specific tokens when asked.`;
+
+            // User prompt with full context
+            const userPrompt = `MULTI-TOKEN TRADING SYSTEM STATUS:
+
+${formattedContext}
+
+🎯 SYSTEM CONFIGURATION:
+${configStr}
+
+🎖️ OPERATIONAL DIRECTIVES:
+- Fibonacci-based entry strategies across all tokens
+- AI regime analysis every 15 minutes
+- Dynamic risk parameters based on market regimes
+- Automatic token management based on regime rules
+- Position monitoring with trailing stops
+
+Master's Query: "${question}"
+
+Provide a strategic assessment and recommendations based on the current portfolio state.`;
+
+            // Call Claude AI
+            console.log('[Multi Ask] Sending request to Claude AI...');
+            const msg = await claudeClient.messages.create({
+                model: "claude-3-haiku-20240307",
+                max_tokens: 1500,
+                system: systemPrompt,
+                messages: [{ role: 'user', content: userPrompt }],
+            });
+
+            const response = msg.content[0].text;
+            
+            // Split response if too long for Discord
+            if (response.length > 2000) {
+                const chunks = response.match(/.{1,1900}(\s|$)/g);
+                for (let i = 0; i < chunks.length && i < 3; i++) { // Max 3 chunks to avoid spam
+                    await message.channel.send(chunks[i].trim());
+                    if (i < chunks.length - 1) await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+                }
+            } else {
+                await message.channel.send(response);
+            }
+
+            console.log('[Multi Ask] AI response sent successfully');
+
+        } catch (error) {
+            console.error(`[Multi Ask] Error: ${error.message}`);
+            
+            let errorMsg = "❌ Error processing AI request: ";
+            if (error.message.includes('rate_limit')) {
+                errorMsg += "API rate limit reached. Please wait a moment and try again.";
+            } else if (error.message.includes('api_key')) {
+                errorMsg += "API key issue. Please check configuration.";
+            } else {
+                errorMsg += error.message;
+            }
+            
+            await message.channel.send(errorMsg);
+        }
     }
 });
 
