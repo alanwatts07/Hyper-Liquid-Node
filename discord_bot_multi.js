@@ -1163,6 +1163,17 @@ client.on('messageCreate', async (message) => {
                     value: `**Price:** $${analysisData.latest_price?.toFixed(2)}\n**Fib Entry:** $${analysisData.fib_entry?.toFixed(2)}\n**Fib 0:** $${analysisData.wma_fib_0?.toFixed(2)}`,
                     inline: true
                 });
+
+                // Trigger status display
+                if (analysisData.triggerArmed !== undefined) {
+                    const triggerEmoji = analysisData.triggerArmed ? "🎯" : "⏸️";
+                    const triggerStatus = analysisData.triggerArmed ? "ARMED" : "WAITING";
+                    embed.addFields({
+                        name: `${triggerEmoji} Trigger Status`,
+                        value: `**Status:** ${triggerStatus}\n**Condition:** ${analysisData.triggerReason || 'No information available'}`,
+                        inline: false
+                    });
+                }
             }
 
             await message.channel.send({ embeds: [embed] });

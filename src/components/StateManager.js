@@ -2,15 +2,21 @@
 import logger from '../utils/logger.js';
 import fs from 'fs/promises';
 
-const POSITION_FILE = 'position.json';
-const RISK_FILE = 'live_risk.json'; // <-- 1. ADD THIS LINE
-
 class StateManager {
-    constructor(db, tradeExecutor) {
-        //... constructor is the same
+    constructor(db, tradeExecutor, config) {
         this.db = db;
         this.tradeExecutor = tradeExecutor;
+        this.config = config;
         this.state = { inPosition: false, triggerArmed: false };
+    }
+
+    // Token-specific file path methods
+    getPositionFile() {
+        return this.config.files?.position || 'position.json';
+    }
+
+    getRiskFile() {
+        return this.config.files?.liveRisk || 'live_risk.json';
     }
 
     async loadInitialState() {
@@ -27,8 +33,9 @@ class StateManager {
             if (openPositions.length > 0) {
                 // ... this part remains the same ...
                 const livePosition = openPositions[0].position;
-                logger.warn(`Found existing open position for ${livePosition.coin}! Creating ${POSITION_FILE}.`);
-                await fs.writeFile(POSITION_FILE, JSON.stringify(livePosition, null, 2));
+                const positionFile = this.getPositionFile();
+                logger.warn(`Found existing open position for ${livePosition.coin}! Creating ${positionFile}.`);
+                await fs.writeFile(positionFile, JSON.stringify(livePosition, null, 2));
 
                 await this.db.updatePosition(livePosition.coin, Number(livePosition.szi) > 0 ? "LONG" : "SHORT", Math.abs(Number(livePosition.szi)), Number(livePosition.entryPx), "OPEN");
                 this.state.inPosition = true;
@@ -36,8 +43,8 @@ class StateManager {
             } else {
                  // --- 2. THIS IS THE KEY CHANGE ---
                 logger.info(`No open positions found on exchange. Ensuring local state files are deleted.`);
-                await this.deleteFile(POSITION_FILE);
-                await this.deleteFile(RISK_FILE); // <-- ADD THIS LINE
+                await this.deleteFile(this.getPositionFile());
+                await this.deleteFile(this.getRiskFile()); // <-- ADD THIS LINE
                 this.state.inPosition = false;
             }
         } catch (error) {
