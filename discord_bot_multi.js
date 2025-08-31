@@ -185,7 +185,8 @@ class DatabaseNotificationManager {
                 break;
 
             case 'REGIME_ASSESSMENT':
-                await this.sendRegimeNotification(token, parsedDetails, timestamp);
+                // Skip automatic regime notifications - only send when manually requested
+                // await this.sendRegimeNotification(token, parsedDetails, timestamp);
                 break;
 
             case 'TRADE_BLOCKED':

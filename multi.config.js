@@ -23,7 +23,7 @@ export default {
     // Regime-based auto management rules
     regimeRules: {
         enabled: true, // Master switch for auto regime control
-        checkInterval: 300000, // 5 minutes
+        checkInterval: 900000, // 15 minutes
         rules: [
             {
                 name: "STRONG_DOWNTREND_DISABLE",
