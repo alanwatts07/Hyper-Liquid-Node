@@ -285,11 +285,62 @@ class MultiTokenManager extends EventEmitter {
 
             console.log(`[MultiManager] ${token} regime: ${regimeAssessment.regime} (confidence: ${regimeAssessment.confidence}/10)`);
 
+            // Apply regime-based risk parameters
+            await this.applyRegimeRiskParameters(token, regimeAssessment);
+            
             // Check regime rules
             await this.applyRegimeRules(token, regimeAssessment);
 
         } catch (error) {
             console.error(`[MultiManager] Error checking ${token} regime: ${error.message}`);
+        }
+    }
+
+    async applyRegimeRiskParameters(token, regimeAssessment) {
+        try {
+            const tokenConfig = this.config.tokens[token];
+            if (!tokenConfig) return;
+
+            // Get regime-based risk parameters from multi config
+            const regimeRiskParams = this.config.regimeRiskMultipliers[regimeAssessment.regime];
+            if (!regimeRiskParams) {
+                console.log(`[MultiManager] No risk parameters defined for regime: ${regimeAssessment.regime}`);
+                return;
+            }
+
+            // Construct the live risk file path
+            const riskFilePath = path.resolve(tokenConfig.dataDir, 'live_risk.json');
+            
+            // Read existing live risk data if it exists
+            let existingRiskData = {};
+            try {
+                const data = await fs.readFile(riskFilePath, 'utf8');
+                existingRiskData = JSON.parse(data);
+            } catch (error) {
+                // File doesn't exist yet, that's okay
+                console.log(`[MultiManager] ${token}: No existing risk data, creating new`);
+            }
+
+            // Create updated risk data with regime-based parameters
+            const updatedRiskData = {
+                ...existingRiskData,
+                timestamp: new Date().toISOString(),
+                regime: regimeAssessment.regime,
+                regimeConfidence: regimeAssessment.confidence,
+                liveStopLossPercentage: regimeRiskParams.stopLoss,
+                liveTakeProfitPercentage: regimeRiskParams.takeProfit,
+                sizeMultiplier: regimeRiskParams.sizeMultiplier,
+                strategy: regimeRiskParams.strategy,
+                regimeDescription: regimeRiskParams.description
+            };
+
+            // Write updated risk parameters to live_risk.json
+            await fs.writeFile(riskFilePath, JSON.stringify(updatedRiskData, null, 2));
+            
+            console.log(`[MultiManager] ${token}: Applied ${regimeAssessment.regime} risk params - SL: ${(regimeRiskParams.stopLoss * 100).toFixed(1)}%, TP: ${(regimeRiskParams.takeProfit * 100).toFixed(1)}%, Size: ${(regimeRiskParams.sizeMultiplier * 100).toFixed(0)}%`);
+
+        } catch (error) {
+            console.error(`[MultiManager] Error applying risk parameters for ${token}: ${error.message}`);
         }
     }
 

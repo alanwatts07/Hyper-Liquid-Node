@@ -62,6 +62,25 @@ class TradingBot {
         return this.config.files?.manualClose || 'manual_close.json';
     }
 
+    async getDynamicTradeSize() {
+        try {
+            // Try to read live_risk.json for size multiplier
+            const riskData = JSON.parse(await fs.readFile(this.getRiskFile(), 'utf8'));
+            const sizeMultiplier = riskData.sizeMultiplier || 1.0;
+            const baseSize = this.config.trading.tradeUsdSize;
+            const dynamicSize = Math.round(baseSize * sizeMultiplier);
+            
+            logger.info(`Dynamic trade size: $${baseSize} × ${(sizeMultiplier * 100).toFixed(0)}% = $${dynamicSize} (${riskData.strategy || 'N/A'} strategy)`);
+            return dynamicSize;
+            
+        } catch (error) {
+            // Fall back to base size if no risk data available
+            const baseSize = this.config.trading.tradeUsdSize;
+            logger.info(`Using base trade size: $${baseSize} (no regime data available)`);
+            return baseSize;
+        }
+    }
+
     async start() {
         logger.info("========================================");
         logger.info("      STARTING HYPERLIQUID NODE BOT      ");
@@ -126,11 +145,12 @@ class TradingBot {
                     }
                 }
 
-                // --- THIS SECTION IS NOW CLEANER ---
-                // The old logic for setting a temporary risk config has been removed.
+                // Get dynamic trade size based on regime multiplier
+                const dynamicTradeSize = await this.getDynamicTradeSize();
+                
                 const tradeResult = await this.tradeExecutor.executeBuy(
                     this.config.trading.asset,
-                    this.config.trading.tradeUsdSize
+                    dynamicTradeSize
                 );
 
                 if (tradeResult.success) {
@@ -232,7 +252,11 @@ class TradingBot {
                 bull_state: this.latestAnalysis.bull_state,
                 stoch_rsi_4hr: this.latestAnalysis.stoch_rsi_4hr,
                 liveTakeProfitPercentage: action.liveTakeProfitPercentage,
-                liveStopLossPercentage: action.liveStopLossPercentage
+                liveStopLossPercentage: action.liveStopLossPercentage,
+                strategy: action.strategy,
+                regime: action.regime,
+                sizeMultiplier: action.sizeMultiplier,
+                timestamp: new Date().toISOString()
             };
             await fs.writeFile(this.getRiskFile(), JSON.stringify(riskData, null, 2));
 

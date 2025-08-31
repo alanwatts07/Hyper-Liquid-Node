@@ -8,7 +8,7 @@ export default {
     trading: {
         ...baseConfig.trading,
         asset: 'SOL',
-        tradeUsdSize: 1000,
+        tradeUsdSize: 360,
         leverage: 3,
         
         // SOL-specific trade blockers

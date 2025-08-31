@@ -1,11 +1,46 @@
 // src/components/RiskManager.js
 import logger from '../utils/logger.js';
+import fs from 'fs/promises';
+import path from 'path';
 
 class RiskManager {
     constructor(config, db) {
         this.config = config;
         this.db = db;
         this.positionState = {};
+    }
+
+    async loadDynamicRiskParameters() {
+        try {
+            // Try to read live_risk.json
+            const riskFilePath = this.config.files?.liveRisk || 'live_risk.json';
+            const data = await fs.readFile(riskFilePath, 'utf8');
+            const riskData = JSON.parse(data);
+            
+            // Return dynamic parameters if they exist
+            if (riskData.liveStopLossPercentage !== undefined && riskData.liveTakeProfitPercentage !== undefined) {
+                logger.info(`RiskManager: Using dynamic risk parameters - SL: ${(riskData.liveStopLossPercentage * 100).toFixed(1)}%, TP: ${(riskData.liveTakeProfitPercentage * 100).toFixed(1)}% (Strategy: ${riskData.strategy || 'N/A'})`);
+                return {
+                    stopLossPercentage: riskData.liveStopLossPercentage,
+                    takeProfitPercentage: riskData.liveTakeProfitPercentage,
+                    sizeMultiplier: riskData.sizeMultiplier || 1.0,
+                    strategy: riskData.strategy || 'DYNAMIC',
+                    regime: riskData.regime || 'UNKNOWN'
+                };
+            }
+        } catch (error) {
+            // File doesn't exist or can't be read, use config defaults
+            logger.info('RiskManager: No dynamic risk data available, using config defaults');
+        }
+
+        // Fallback to config defaults
+        return {
+            stopLossPercentage: this.config.risk.stopLossPercentage,
+            takeProfitPercentage: this.config.risk.takeProfitPercentage,
+            sizeMultiplier: 1.0,
+            strategy: 'DEFAULT',
+            regime: 'CONFIG_DEFAULT'
+        };
     }
 
     async checkPosition(position, positionInfo, currentPrice, analysis) {
@@ -16,19 +51,9 @@ class RiskManager {
             return { shouldClose: false };
         }
 
-        // --- THIS IS THE NEW DYNAMIC LOGIC ---
-        const { stopLossPercentage } = this.config.risk;
-        let takeProfitPercentage;
-
-        // 1. Dynamically set Take Profit based on the LIVE market state from the analysis
-        if (analysis.bull_state) {
-            // If the 4hr trend is UP, use the default, higher take-profit from your config file.
-            takeProfitPercentage = this.config.risk.takeProfitPercentage;
-        } else {
-            // If the 4hr trend is DOWN, use a more conservative, fixed 25% take-profit.
-            takeProfitPercentage = 0.25;
-        }
-        // --- END OF NEW LOGIC ---
+        // Load dynamic risk parameters (regime-based or config defaults)
+        const riskParams = await this.loadDynamicRiskParameters();
+        const { stopLossPercentage, takeProfitPercentage } = riskParams;
 
         const { wma_fib_0, fib_entry } = analysis;
         const roe = parseFloat(positionInfo.returnOnEquity);
@@ -93,10 +118,13 @@ class RiskManager {
         }
 
         return {
-    shouldClose: false,
-    liveTakeProfitPercentage: takeProfitPercentage,
-    liveStopLossPercentage: stopLossPercentage
-};
+            shouldClose: false,
+            liveTakeProfitPercentage: takeProfitPercentage,
+            liveStopLossPercentage: stopLossPercentage,
+            strategy: riskParams.strategy,
+            regime: riskParams.regime,
+            sizeMultiplier: riskParams.sizeMultiplier
+        };
     }
 
     clearPositionState(asset) {
