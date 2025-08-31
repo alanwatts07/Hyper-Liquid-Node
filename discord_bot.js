@@ -8,6 +8,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import config from './src/config.js';
+import DatabaseManager from './src/database/DatabaseManager.js';
+import DataCollector from './src/components/DataCollector.js';
+import TradeExecutor from './src/components/TradeExecutor.js';
+import StateManager from './src/components/StateManager.js';
 import { exec } from 'child_process'; // For running scripts
 import puppeteer from 'puppeteer';   // For screenshots
 import Anthropic from '@anthropic-ai/sdk'; // <-- 1. IMPORT CLAUDE'S SDK
@@ -15,6 +19,7 @@ import Anthropic from '@anthropic-ai/sdk'; // <-- 1. IMPORT CLAUDE'S SDK
 // --- Configuration ---
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
+const OWNER_USER_ID = process.env.DISCORD_OWNER_ID; // Owner's Discord user ID
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY; // <-- 2. ENSURE THIS IS IN YOUR .env
 const DB_FILE = path.resolve(process.cwd(), 'trading_bot.db');
 const LIVE_ANALYSIS_FILE = 'live_analysis.json';
@@ -28,6 +33,10 @@ const SIGNAL_GENERATOR_FILE = path.resolve(process.cwd(), 'src/components/Signal
 if (!BOT_TOKEN || !CHANNEL_ID) {
     console.error("[!!!] CRITICAL: DISCORD_BOT_TOKEN or DISCORD_CHANNEL_ID is not set in the .env file.");
     process.exit(1);
+}
+
+if (!OWNER_USER_ID) {
+    console.error("[!!!] WARNING: DISCORD_OWNER_ID is not set in the .env file. !buy command will be disabled.");
 }
 
 // ==========================================================
@@ -61,6 +70,13 @@ const client = new Client({
 let db;
 let lastProcessedEventId = 0;
 const commandPrefix = "!";
+
+// Trading components for !buy command
+let tradeDb;
+let dataCollector;
+let tradeExecutor;
+let stateManager;
+const POSITION_FILE = 'position.json';
 
 // ==========================================================
 // /// <<<--- NEW HELPER FUNCTION TO READ STRATEGY FILE ---
@@ -125,6 +141,28 @@ function parseStrategyFromCode(code) {
         
     } catch (error) {
         return "Error parsing strategy logic.";
+    }
+}
+
+// --- Helper Functions ---
+function isOwner(userId) {
+    return OWNER_USER_ID && userId === OWNER_USER_ID;
+}
+
+async function initializeTradeComponents() {
+    try {
+        tradeDb = new DatabaseManager(config.database.file, config);
+        await tradeDb.connect();
+        
+        dataCollector = new DataCollector(config);
+        tradeExecutor = new TradeExecutor(config, tradeDb, dataCollector);
+        stateManager = new StateManager(tradeDb, tradeExecutor);
+        
+        console.log('[*] Trading components initialized for Discord bot.');
+        return true;
+    } catch (error) {
+        console.error(`[!!!] Failed to initialize trading components: ${error.message}`);
+        return false;
     }
 }
 
@@ -262,7 +300,7 @@ async function sendStatusReport() {
         const eventTime = new Date(lastEvent.timestamp).toLocaleTimeString();
         embed.setFooter({ text: `Last Event: ${lastEvent.event_type} at ${eventTime}` });
     }
-    await message.channel.send({ embeds: [embed] });
+    await channel.send({ embeds: [embed] });
 }
 
 // --- Bot Events & Command Handling ---
@@ -275,6 +313,17 @@ client.on('ready', async () => {
         if (lastEvent) lastProcessedEventId = lastEvent.id;
         console.log(`[*] Starting event checks from ID: ${lastProcessedEventId}`);
     }
+    
+    // Initialize trading components for !buy command
+    if (OWNER_USER_ID) {
+        const initialized = await initializeTradeComponents();
+        if (initialized) {
+            console.log('[*] Trading components ready for !buy command.');
+        } else {
+            console.log('[*] !buy command will be disabled due to initialization failure.');
+        }
+    }
+    
     setInterval(checkForEvents, 10000);
     setInterval(sendStatusReport, 15 * 60 * 1000);
 });
@@ -292,6 +341,11 @@ client.on('messageCreate', async (message) => {
     }
 
     if (command === 'panic') {
+        // Check if user is the owner
+        if (!isOwner(message.author.id)) {
+            return message.channel.send("❌ Access denied. This command is owner-only.");
+        }
+        
          const riskData = await readJsonFile(LIVE_RISK_FILE);
          if (!riskData) return message.channel.send("There are no open positions to close.");
          await fs.writeFile(MANUAL_CLOSE_FILE, JSON.stringify({ signal: 'close', reason: 'manual_panic' }, null, 2));
@@ -628,6 +682,105 @@ ${strategyCode.substring(0, 500)}...
         } catch (error) {
             console.error(`[!!!] Claude AI Error: ${error.message}`);
             await message.channel.send("I apologize, Master. I encountered an error while processing your request with my AI core.");
+        }
+    }
+
+    // ==========================================================
+    // /// <<<--- NEW !BUY COMMAND (OWNER ONLY) ---
+    // ==========================================================
+    if (command === 'buy') {
+        // Check if user is the owner
+        if (!isOwner(message.author.id)) {
+            return message.channel.send("❌ Access denied. This command is owner-only.");
+        }
+        
+        // Check if trading components are initialized
+        if (!tradeExecutor || !stateManager) {
+            return message.channel.send("❌ Trading components not initialized. Please check bot configuration.");
+        }
+        
+        // Check if already in position
+        if (stateManager.isInPosition()) {
+            return message.channel.send("⚠️ Bot is already in a position. Use `!panic` to close first.");
+        }
+        
+        const embed = new EmbedBuilder()
+            .setTitle("🚨 Manual Buy Command Initiated")
+            .setDescription("Executing manual buy order with current bot settings...")
+            .setColor(0xFFA500)
+            .addFields(
+                { name: "Asset", value: config.trading.asset, inline: true },
+                { name: "Size", value: `$${config.trading.tradeUsdSize}`, inline: true },
+                { name: "Leverage", value: `${config.trading.leverage}x`, inline: true }
+            )
+            .setTimestamp(new Date());
+            
+        await message.channel.send({ embeds: [embed] });
+        await message.channel.sendTyping();
+        
+        try {
+            // Execute the buy order using the same logic as the main bot
+            const tradeResult = await tradeExecutor.executeBuy(
+                config.trading.asset,
+                config.trading.tradeUsdSize
+            );
+            
+            if (tradeResult.success) {
+                // Update state manager to reflect the new position
+                stateManager.setInPosition(true);
+                
+                // Create proper position object that matches HyperLiquid format
+                const properPositionObject = {
+                    coin: config.trading.asset,
+                    szi: tradeResult.filledOrder.totalSz,
+                    entryPx: tradeResult.filledOrder.avgPx,
+                    unrealizedPnl: "0",
+                    returnOnEquity: 0,
+                    positionValue: (parseFloat(tradeResult.filledOrder.totalSz) * parseFloat(tradeResult.filledOrder.avgPx)).toString(),
+                    maxLeverage: config.trading.leverage.toString()
+                };
+                
+                // Write position file so main bot recognizes it
+                await fs.writeFile(POSITION_FILE, JSON.stringify(properPositionObject, null, 2));
+                
+                // Send success notification
+                const successEmbed = new EmbedBuilder()
+                    .setTitle("✅ Manual Buy Order Executed Successfully!")
+                    .setDescription(`Position opened for **${config.trading.asset}**`)
+                    .setColor(0x00FF00)
+                    .addFields(
+                        { name: "Size Filled", value: `${parseFloat(tradeResult.filledOrder.totalSz).toFixed(4)} ${config.trading.asset}`, inline: true },
+                        { name: "Average Price", value: `$${parseFloat(tradeResult.filledOrder.avgPx).toFixed(2)}`, inline: true },
+                        { name: "Total Value", value: `$${(parseFloat(tradeResult.filledOrder.totalSz) * parseFloat(tradeResult.filledOrder.avgPx)).toFixed(2)}`, inline: true }
+                    )
+                    .setFooter({ text: "Position synchronized with main trading bot" })
+                    .setTimestamp(new Date());
+                    
+                await message.channel.send({ embeds: [successEmbed] });
+                
+                console.log(`[Discord Buy] Manual buy executed by ${message.author.tag} - ${tradeResult.filledOrder.totalSz} ${config.trading.asset} @ $${tradeResult.filledOrder.avgPx}`);
+                
+            } else {
+                // Send failure notification
+                const errorEmbed = new EmbedBuilder()
+                    .setTitle("❌ Manual Buy Order Failed")
+                    .setDescription(`Failed to execute buy order: ${tradeResult.error}`)
+                    .setColor(0xFF0000)
+                    .setTimestamp(new Date());
+                    
+                await message.channel.send({ embeds: [errorEmbed] });
+            }
+            
+        } catch (error) {
+            console.error(`[Discord Buy] Error executing manual buy: ${error.message}`);
+            
+            const errorEmbed = new EmbedBuilder()
+                .setTitle("❌ Manual Buy Command Error")
+                .setDescription(`An unexpected error occurred: ${error.message}`)
+                .setColor(0xFF0000)
+                .setTimestamp(new Date());
+                
+            await message.channel.send({ embeds: [errorEmbed] });
         }
     }
 });
