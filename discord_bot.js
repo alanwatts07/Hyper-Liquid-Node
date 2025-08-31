@@ -335,6 +335,55 @@ client.on('messageCreate', async (message) => {
     const command = args.shift().toLowerCase();
 
     // Command handlers for status, panic, logs, monitor...
+    if (command === 'info') {
+        const embed = new EmbedBuilder()
+            .setTitle("🤖 HyperLiquid Trading Bot - Command Reference")
+            .setDescription("Here are all available commands for interacting with your trading bot:")
+            .setColor(0x7289DA)
+            .setThumbnail("https://cdn.discordapp.com/embed/avatars/0.png")
+            .addFields(
+                {
+                    name: "📊 **Monitoring Commands**",
+                    value: `\`!status\` - Quick status report with current position\n\`!monitor\` - Comprehensive live dashboard\n\`!logs [count]\` - Recent bot events (1-25)\n\`!chart\` - Generate live price chart`,
+                    inline: false
+                },
+                {
+                    name: "⚙️ **Configuration & Analysis**",
+                    value: `\`!config\` - View current bot settings\n\`!strategy\` - Current trading strategy analysis\n\`!ask [question]\` - AI-powered bot consultation`,
+                    inline: false
+                },
+                {
+                    name: "🚨 **Control Commands (Owner Only)**",
+                    value: `\`!buy\` - Execute manual buy order\n\`!panic\` - Emergency position close`,
+                    inline: false
+                },
+                {
+                    name: "ℹ️ **Information**",
+                    value: `\`!info\` - Show this command reference`,
+                    inline: false
+                }
+            )
+            .addFields(
+                {
+                    name: "🔐 **Access Levels**",
+                    value: "• **Public**: status, monitor, logs, config, strategy, chart, ask, info\n• **Owner Only**: buy, panic (requires DISCORD_OWNER_ID)",
+                    inline: false
+                },
+                {
+                    name: "💡 **Tips**",
+                    value: "• Use `!monitor` for the most detailed overview\n• `!ask` can answer questions about your strategy\n• `!logs 5` shows last 5 events (default: 10)\n• Owner commands require Discord ID in environment",
+                    inline: false
+                }
+            )
+            .setFooter({ 
+                text: "HyperLiquid Fibonacci Trading Bot | Use commands responsibly", 
+                iconURL: "https://cdn.discordapp.com/embed/avatars/1.png" 
+            })
+            .setTimestamp(new Date());
+
+        await message.channel.send({ embeds: [embed] });
+    }
+
     if (command === 'status') {
         await message.channel.send("Fetching instant status report...");
         await sendStatusReport();
