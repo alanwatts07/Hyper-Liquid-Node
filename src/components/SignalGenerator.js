@@ -31,12 +31,7 @@ class SignalGenerator {
         if (tradeBlockers.blockOn4hrStoch && (stoch_rsi_4hr.k > 80 || stoch_rsi_4hr.d > 80)) {
             const reason = `HOLD (BLOCKER): 4hr Stoch is overbought.`;
             logger.info(reason);
-            // --- 2. Add database event log ---
-            await this.db.logEvent('TRADE_BLOCKED', { 
-                reason: '4hr_stoch_overbought', 
-                k: stoch_rsi_4hr.k, 
-                d: stoch_rsi_4hr.d 
-            });
+            // Don't log TRADE_BLOCKED here - only log when there's an actual buy signal blocked
             return { type: 'hold', reason };
         }
 
@@ -52,12 +47,7 @@ class SignalGenerator {
                 // If the trend is down and we are NOT oversold, block the trade.
                 const reason = `HOLD (BLOCKER): 4hr price trend is bearish and Stoch is not oversold.`;
                 logger.info(reason);
-                await this.db.logEvent('TRADE_BLOCKED', { 
-                    reason: '4hr_trend_bearish_not_oversold', 
-                    bull_state: bull_state,
-                    k_4hr: stoch_rsi_4hr.k,
-                    d_4hr: stoch_rsi_4hr.d
-                });
+                // Don't log TRADE_BLOCKED here - only log when there's an actual buy signal blocked
                 return { type: 'hold', reason };
             }
         }
@@ -79,13 +69,53 @@ class SignalGenerator {
             // Buy condition: Price has bounced above the base fib_0 level (now using EMA)
             if (latest_price > wma_fib_0) {
 
+                // Check all blockers again during actual buy signal attempt
+                
+                // --- Blocker 1: 4-Hour Stochastic RSI (re-check during buy signal) ---
+                if (tradeBlockers.blockOn4hrStoch && (stoch_rsi_4hr.k > 80 || stoch_rsi_4hr.d > 80)) {
+                    const reason = `TRADE BLOCKED: Buy signal triggered, but 4hr Stoch is overbought.`;
+                    logger.info(reason);
+                    // Reset trigger state when trade is blocked (like successful trades)
+                    this.state.setTriggerArmed(false);
+                    // Log the actual blocked trade event
+                    await this.db.logEvent('TRADE_BLOCKED', { 
+                        reason: '4hr_stoch_overbought', 
+                        k: stoch_rsi_4hr.k, 
+                        d: stoch_rsi_4hr.d 
+                    });
+                    return { type: 'hold', reason: reason };
+                }
+
+                // --- Blocker 2: 4-Hour Price Trend (re-check during buy signal) ---
+                if (tradeBlockers.blockOnPriceTrend && !bull_state) {
+                    // EXCEPTION: If the trend is down BUT the 4hr stoch is deeply oversold, allow the trade.
+                    if (stoch_rsi_4hr.k < 20 && stoch_rsi_4hr.d < 20) {
+                        logger.info(`TRADE PERMITTED (OVERRIDE): Trend is bearish, but 4hr Stoch is oversold (K:${stoch_rsi_4hr.k.toFixed(2)}), allowing potential reversal entry.`);
+                    } else {
+                        const reason = `TRADE BLOCKED: Buy signal triggered, but 4hr trend is bearish and Stoch not oversold.`;
+                        logger.info(reason);
+                        // Reset trigger state when trade is blocked (like successful trades)
+                        this.state.setTriggerArmed(false);
+                        // Log the actual blocked trade event
+                        await this.db.logEvent('TRADE_BLOCKED', { 
+                            reason: '4hr_trend_bearish_not_oversold', 
+                            bull_state: bull_state,
+                            k_4hr: stoch_rsi_4hr.k,
+                            d_4hr: stoch_rsi_4hr.d
+                        });
+                        return { type: 'hold', reason: reason };
+                    }
+                }
+
                 // --- Blocker 3: 5-Minute Stochastic RSI ---
                 // If enabled, check if the 5min Stoch is overbought right at the entry point.
                 if (tradeBlockers.blockOn5minStoch) {
                     if (stoch_rsi.k >= 80 || stoch_rsi.d >= 80) {
-                        const reason = `HOLD: Price condition met, but 5min Stoch is overbought.`;
+                        const reason = `TRADE BLOCKED: Buy signal triggered, but 5min Stoch is overbought.`;
                         logger.info(reason);
-                        // --- 2. Add database event log ---
+                        // Reset trigger state when trade is blocked (like successful trades)
+                        this.state.setTriggerArmed(false);
+                        // Log the actual blocked trade event
                         await this.db.logEvent('TRADE_BLOCKED', { 
                             reason: '5min_stoch_overbought', 
                             k: stoch_rsi.k, 
