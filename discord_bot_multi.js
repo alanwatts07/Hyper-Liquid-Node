@@ -401,6 +401,12 @@ client.on('ready', async () => {
         sendNotification(`🚨 **EMERGENCY SHUTDOWN**\n**Reason:** ${reason}\n**Tokens affected:** ${tokensAffected.join(', ')}`, 0xFF0000);
     });
 
+    multiManager.on('regimeUpdated', ({ token, regimeAssessment }) => {
+        const emoji = getRegimeEmoji(regimeAssessment.regime);
+        const color = getTokenColor(token);
+        sendNotification(`🧠 **${token} Regime Updated**\n${emoji} **${regimeAssessment.regime}** (${regimeAssessment.confidence}/10)\n\n${regimeAssessment.reasoning || 'Market conditions assessed'}`, color);
+    });
+
     console.log('[*] Multi-token manager initialized and ready');
 
     // Initialize database notification system
@@ -549,44 +555,74 @@ client.on('messageCreate', async (message) => {
             }
 
             await message.channel.sendTyping();
-            await message.channel.send(`🧠 Analyzing **${token}** market regime...`);
+            await message.channel.send(`🧠 Fetching **${token}** market regime from database...`);
 
             try {
+                const monitor = dbNotificationManager?.monitors?.get(token);
+                if (!monitor) {
+                    return message.channel.send(`❌ Database monitor not available for ${token}`);
+                }
+
+                // Get most recent regime assessment from database
+                const recentRegime = await monitor.db.get(
+                    'SELECT details, timestamp FROM events WHERE event_type = ? ORDER BY id DESC LIMIT 1',
+                    ['REGIME_ASSESSMENT']
+                );
+
+                if (!recentRegime) {
+                    return message.channel.send(`❌ No regime assessments found for ${token}. Bot may still be starting up.`);
+                }
+
+                const regimeData = JSON.parse(recentRegime.details);
                 const regimeAI = multiManager.regimeAIs.get(token);
-                if (!regimeAI) {
-                    return message.channel.send(`❌ Regime AI not initialized for ${token}`);
-                }
+                const regimeInfo = regimeAI ? regimeAI.getRegimeInfo(regimeData.regime) : {
+                    emoji: getRegimeEmoji(regimeData.regime),
+                    tradingBias: 'Unknown',
+                    riskMultiplier: 1.0
+                };
 
-                const analysisData = await readTokenAnalysisFile(token, 'live_analysis.json');
-                if (!analysisData) {
-                    return message.channel.send(`❌ No analysis data available for ${token}`);
-                }
-
-                const regimeAssessment = await regimeAI.assessMarketRegime(analysisData, null, 'manual', token);
-                const regimeInfo = regimeAI.getRegimeInfo(regimeAssessment.regime);
+                // Calculate age of assessment
+                const assessmentAge = Math.round((Date.now() - new Date(recentRegime.timestamp).getTime()) / (1000 * 60));
+                const ageText = assessmentAge < 60 ? `${assessmentAge} minutes ago` : `${Math.round(assessmentAge/60)} hours ago`;
 
                 const embed = new EmbedBuilder()
-                    .setTitle(`🧠 ${token} Regime Analysis`)
-                    .setDescription(`**Current State: ${regimeInfo.emoji} ${regimeAssessment.regime}**`)
+                    .setTitle(`🧠 ${token} Current Regime (From Database)`)
+                    .setDescription(`**Current State: ${regimeInfo.emoji} ${regimeData.regime}**`)
                     .setColor(getTokenColor(token))
                     .addFields(
                         {
-                            name: "📊 Assessment",
-                            value: `**Confidence:** ${regimeAssessment.confidence}/10\n**Trading Bias:** ${regimeInfo.tradingBias}\n**Risk Multiplier:** ${regimeInfo.riskMultiplier}x`,
+                            name: "📊 Assessment Details",
+                            value: `**Confidence:** ${regimeData.confidence}/10\n**Trading Bias:** ${regimeInfo.tradingBias}\n**Risk Multiplier:** ${regimeInfo.riskMultiplier}x\n**Last Updated:** ${ageText}`,
                             inline: true
                         },
                         {
+                            name: "🔍 Key Signals",
+                            value: regimeData.signals || 'Mixed signals detected',
+                            inline: true
+                        },
+                        {
+                            name: "📈 Market Outlook",
+                            value: regimeData.outlook || 'Monitor for changes',
+                            inline: false
+                        },
+                        {
                             name: "🎯 AI Reasoning",
-                            value: regimeAssessment.reasoning || 'Analysis complete',
+                            value: regimeData.reasoning || 'Technical analysis completed',
                             inline: false
                         }
                     )
-                    .setTimestamp(new Date());
+                    .setFooter({ 
+                        text: `Database Assessment • Updated every 15min • ${new Date(recentRegime.timestamp).toLocaleTimeString()}`,
+                        iconURL: "https://cdn.discordapp.com/embed/avatars/2.png"
+                    })
+                    .setTimestamp(new Date(recentRegime.timestamp));
 
-                if (regimeAssessment.recommendations?.length > 0) {
+                // Add trading recommendations if available
+                if (regimeData.recommendations && regimeData.recommendations.length > 0) {
+                    const recommendationsText = regimeData.recommendations.join('\n');
                     embed.addFields({
-                        name: "💡 Recommendations",
-                        value: regimeAssessment.recommendations.join('\n'),
+                        name: "💡 Trading Recommendations",
+                        value: recommendationsText,
                         inline: false
                     });
                 }
@@ -594,7 +630,7 @@ client.on('messageCreate', async (message) => {
                 await message.channel.send({ embeds: [embed] });
 
             } catch (error) {
-                await message.channel.send(`❌ Error analyzing ${token} regime: ${error.message}`);
+                await message.channel.send(`❌ Error fetching ${token} regime from database: ${error.message}`);
             }
         } else {
             // All tokens regime overview
@@ -625,11 +661,44 @@ client.on('messageCreate', async (message) => {
                     regimeDescription += `${emoji} **${token}**: ${tokenStatus.regime.current}\n`;
                     regimeDescription += `└ Confidence: ${confidenceBar} ${confidence}/10\n\n`;
                 } else {
-                    // Check if we can get analysis data directly
-                    const analysisData = await readTokenAnalysisFile(token, 'live_analysis.json');
-                    if (analysisData && tokenConfig.enabled) {
-                        regimeDescription += `⏳ **${token}**: Analyzing...\n`;
-                        regimeDescription += `└ Data: Price $${analysisData.latest_price?.toFixed(2)}\n\n`;
+                    // Get the most recent regime assessment from database
+                    const monitor = dbNotificationManager?.monitors?.get(token);
+                    if (monitor && tokenConfig.enabled) {
+                        try {
+                            // Query for most recent REGIME_ASSESSMENT event
+                            const recentRegime = await monitor.db.get(
+                                'SELECT details, timestamp FROM events WHERE event_type = ? ORDER BY id DESC LIMIT 1',
+                                ['REGIME_ASSESSMENT']
+                            );
+                            
+                            if (recentRegime) {
+                                const regimeData = JSON.parse(recentRegime.details);
+                                const emoji = getRegimeEmoji(regimeData.regime);
+                                const confidence = regimeData.confidence || 0;
+                                const confidenceBar = '█'.repeat(Math.floor(confidence / 2)) + '░'.repeat(5 - Math.floor(confidence / 2));
+                                
+                                // Calculate age of assessment
+                                const assessmentAge = Math.round((Date.now() - new Date(recentRegime.timestamp).getTime()) / (1000 * 60));
+                                const ageText = assessmentAge < 60 ? `${assessmentAge}m ago` : `${Math.round(assessmentAge/60)}h ago`;
+                                
+                                regimeDescription += `${emoji} **${token}**: ${regimeData.regime}\n`;
+                                regimeDescription += `└ Confidence: ${confidenceBar} ${confidence}/10 (${ageText})\n\n`;
+                                activeTokens++;
+                            } else {
+                                // No regime assessment found, check for analysis data
+                                const analysisData = await readTokenAnalysisFile(token, 'live_analysis.json');
+                                if (analysisData) {
+                                    regimeDescription += `⏳ **${token}**: Analyzing...\n`;
+                                    regimeDescription += `└ Data: Price $${analysisData.latest_price?.toFixed(2)}\n\n`;
+                                } else {
+                                    regimeDescription += `🔄 **${token}**: Starting up...\n`;
+                                    regimeDescription += `└ Status: Building data\n\n`;
+                                }
+                            }
+                        } catch (error) {
+                            regimeDescription += `❌ **${token}**: DB Error\n`;
+                            regimeDescription += `└ Error: ${error.message}\n\n`;
+                        }
                     } else if (tokenConfig.enabled) {
                         regimeDescription += `🔄 **${token}**: Starting up...\n`;
                         regimeDescription += `└ Status: Building data\n\n`;

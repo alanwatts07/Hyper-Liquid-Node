@@ -240,11 +240,28 @@ class MultiTokenManager extends EventEmitter {
     async startRegimeMonitoring() {
         console.log('[MultiManager] 🧠 Starting regime-based token monitoring...');
         
+        // Log regime check schedule
+        const intervalMinutes = this.config.regimeRules.checkInterval / 60000;
+        console.log(`[MultiManager] 📅 Regime checks scheduled every ${intervalMinutes} minutes`);
+        
+        // Run immediate regime check on startup
+        console.log('[MultiManager] 🚀 Running immediate startup regime check...');
+        try {
+            await this.checkAllRegimes();
+            console.log('[MultiManager] ✅ Startup regime check complete');
+        } catch (error) {
+            console.error(`[MultiManager] Error in startup regime check: ${error.message}`);
+        }
+        
+        console.log(`[MultiManager] ⏰ Next scheduled regime check in ${intervalMinutes} minutes`);
+        
         this.regimeCheckInterval = setInterval(async () => {
             if (this.isShuttingDown) return;
             
             try {
+                console.log('[MultiManager] 🔍 Starting scheduled regime check...');
                 await this.checkAllRegimes();
+                console.log(`[MultiManager] ✅ Regime check complete. Next check in ${intervalMinutes} minutes`);
             } catch (error) {
                 console.error(`[MultiManager] Error in regime check: ${error.message}`);
             }
@@ -285,6 +302,14 @@ class MultiTokenManager extends EventEmitter {
 
             console.log(`[MultiManager] ${token} regime: ${regimeAssessment.regime} (confidence: ${regimeAssessment.confidence}/10)`);
 
+            // Save regime assessment to database
+            await this.saveRegimeAssessmentToDatabase(token, regimeAssessment);
+
+            // Emit event for Discord notifications (if confidence is high enough)
+            if (regimeAssessment.confidence >= 6) {
+                this.emit('regimeUpdated', { token, regimeAssessment });
+            }
+
             // Apply regime-based risk parameters
             await this.applyRegimeRiskParameters(token, regimeAssessment);
             
@@ -293,6 +318,36 @@ class MultiTokenManager extends EventEmitter {
 
         } catch (error) {
             console.error(`[MultiManager] Error checking ${token} regime: ${error.message}`);
+        }
+    }
+
+    async saveRegimeAssessmentToDatabase(token, regimeAssessment) {
+        try {
+            const db = this.databases.get(token);
+            if (!db) {
+                console.log(`[MultiManager] No database connection for ${token}, skipping regime save`);
+                return;
+            }
+
+            // Create event details for database
+            const eventDetails = {
+                regime: regimeAssessment.regime,
+                confidence: regimeAssessment.confidence,
+                signals: regimeAssessment.signals || '',
+                reasoning: regimeAssessment.reasoning || '',
+                outlook: regimeAssessment.outlook || '',
+                recommendations: regimeAssessment.recommendations || [],
+                source: 'multi-manager-auto',
+                timestamp: new Date().toISOString()
+            };
+
+            // Save to database
+            await db.logEvent('REGIME_ASSESSMENT', eventDetails);
+            
+            console.log(`[MultiManager] ✅ ${token} regime assessment saved to database`);
+
+        } catch (error) {
+            console.error(`[MultiManager] Error saving ${token} regime to database: ${error.message}`);
         }
     }
 

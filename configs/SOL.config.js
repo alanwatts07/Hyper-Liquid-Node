@@ -14,9 +14,9 @@ export default {
         // SOL-specific trade blockers
         tradeBlockers: {
             ...baseConfig.trading.tradeBlockers,
-            blockOn4hrStoch: true,
-            blockOnPriceTrend: true,
-            blockOn5minStoch: false // SOL moves fast, be less restrictive
+            blockOn4hrStoch: false,
+            blockOnPriceTrend: false,
+            blockOn5minStoch: true // SOL moves fast, be less restrictive
         }
     },
 
