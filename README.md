@@ -1,145 +1,186 @@
-# Hyperliquid Fibonacci Trading Bot (Node.js Version)
+# HyperLiquid Trading Bot
 
-Welcome to the Hyperliquid Fibonacci Trading Bot, a fully automated, modular, and scalable trading system built in Node.js. This bot is designed to trade perpetual futures on the Hyperliquid DEX based on a sophisticated Fibonacci retracement and state machine strategy.
+A sophisticated automated cryptocurrency trading bot designed for HyperLiquid exchange, implementing advanced technical analysis and risk management strategies.
 
-It actively monitors the market, calculates technical indicators, manages risk with dynamic stop-losses, and provides real-time notifications and monitoring tools.
+## 🚀 Features
+
+- **Automated Trading**: Execute buy/sell orders based on technical analysis signals
+- **Multi-Timeframe Analysis**: Combines 5-minute and 4-hour Stochastic RSI analysis
+- **Fibonacci-Based Entry Strategy**: Uses Fibonacci retracement levels for optimal entry points
+- **Advanced Risk Management**: Configurable stop-loss and take-profit levels with dynamic position monitoring
+- **Discord Notifications**: Real-time alerts for trades, signals, and bot status
+- **Database Logging**: Comprehensive trade history and event logging
+- **Manual Override System**: Emergency controls via file-based commands
+- **Configurable Trade Blockers**: Multiple safety mechanisms to prevent poor entries
+
+## 📁 Project Structure
+
+```
+src/
+├── app.js                 # Main bot application and orchestration
+├── config.js             # Configuration settings and parameters
+├── components/           # Core trading components
+│   ├── DataCollector.js  # Real-time price data collection
+│   ├── TechnicalAnalyzer.js # Technical analysis calculations
+│   ├── SignalGenerator.js   # Trading signal logic
+│   ├── TradeExecutor.js     # Order execution and management
+│   ├── RiskManager.js       # Risk assessment and position monitoring
+│   ├── StateManager.js      # Bot state management
+│   └── Notifier.js         # Discord notification system
+├── database/             # Database management
+│   ├── DatabaseManager.js # SQLite database operations
+│   └── schema.js          # Database schema definitions
+└── utils/               # Utility modules
+    ├── ChartGenerator.js # Chart generation utilities
+    ├── DatabaseStreamer.js # Database streaming utilities
+    ├── helpers.js        # General helper functions
+    └── logger.js         # Logging system
+```
+
+## ⚙️ Configuration
+
+### Environment Variables
+Create a `.env` file in the project root with:
+
+```env
+HYPERLIQUID_WALLET_PRIVATE_KEY=your_private_key_here
+HYPERLIQUID_MAIN_ACCOUNT_ADDRESS=your_wallet_address_here
+DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
+```
+
+### Trading Configuration
+Key settings in `config.js`:
+
+```javascript
+trading: {
+    asset: "SOL",              # Asset to trade
+    tradeUsdSize: 625,         # Trade size in USD
+    leverage: 20,              # Trading leverage
+    slippage: 0.01,            # Slippage tolerance
+    cooldownMinutes: 10,       # Cooldown between trades
+    tradeBlockers: {           # Safety mechanisms
+        blockOn4hrStoch: true,     # Block if 4hr Stoch RSI overbought
+        blockOn5minStoch: true,    # Block if 5min Stoch RSI overbought  
+        blockOnPriceTrend: false   # Block on bearish trend (with oversold exception)
+    }
+}
+```
+
+## 🔧 Installation & Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd hyper_node
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install @nktkas/hyperliquid ethers dotenv luxon
+   ```
+
+3. **Configure environment variables**
+   - Copy `.env.example` to `.env`
+   - Add your HyperLiquid wallet private key
+   - Add your Discord webhook URL (optional)
+
+4. **Run the bot**
+   ```bash
+   node src/app.js
+   ```
+
+## 📈 Trading Strategy
+
+### Entry Strategy
+1. **Fibonacci Setup**: Calculates fibonacci retracement levels using highest/lowest prices over a lookback period
+2. **Trigger Arming**: Price must first drop below the entry level to arm the trigger
+3. **Entry Signal**: Triggered when price bounces back above the EMA-smoothed fibonacci 0% level
+4. **Multi-Timeframe Confirmation**: Incorporates 4-hour trend and stochastic analysis
+
+### Trade Blockers (Safety Mechanisms)
+- **4-Hour Stoch Filter**: Prevents entries when 4hr Stochastic RSI is overbought (>80)
+- **5-Minute Stoch Filter**: Blocks entries when 5min Stochastic RSI is overbought at entry point
+- **Trend Filter**: Optional blocking on bearish 4hr trends (with oversold exception for reversal plays)
+
+### Exit Strategy
+- **Take Profit**: Configurable percentage-based profit taking
+- **Stop Loss**: Configurable percentage-based loss protection
+- **Dynamic Risk Management**: Adjusts levels based on market conditions
+
+## 🛡️ Risk Management
+
+- **Position Sizing**: Fixed USD amount per trade
+- **Leverage Control**: Configurable leverage settings
+- **Cooldown Periods**: Prevents overtrading
+- **Emergency Controls**: Manual override capabilities
+- **Real-time Monitoring**: Continuous position tracking
+
+## 📊 Monitoring & Controls
+
+### Live Files
+- `live_analysis.json`: Real-time technical analysis data
+- `live_risk.json`: Current position and risk metrics
+- `position.json`: Active position details
+
+### Manual Override Commands
+- `manual_override.json`: Force a buy signal
+- `manual_close.json`: Emergency position close
+
+### Example override file:
+```json
+{
+    "signal": "buy"
+}
+```
+
+## 🔔 Notifications
+
+The bot sends Discord notifications for:
+- Bot startup/shutdown events
+- Trade execution confirmations
+- Signal generation alerts
+- Risk management triggers
+- Manual override activations
+
+## 🗃️ Database
+
+Uses SQLite for:
+- Historical price data storage
+- Trade execution logs
+- Bot event tracking
+- Performance analytics
+
+## ⚠️ Important Notes
+
+### Security
+- Never commit your `.env` file containing private keys
+- Use a dedicated trading wallet with limited funds
+- Test thoroughly on testnet before live trading
+
+### Risk Warning
+- Cryptocurrency trading involves substantial risk
+- This bot is for educational/experimental purposes
+- Only trade with funds you can afford to lose
+- Past performance doesn't guarantee future results
+
+### Dependencies
+- Node.js (v14+ recommended)
+- SQLite database
+- Active internet connection
+- HyperLiquid exchange account
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📝 License
+
+This project is provided as-is for educational purposes. Use at your own risk.
 
 ---
 
-## ✨ Features
-
-* **Automated Trading:** Executes long entries based on a defined Fibonacci-based strategy.
-* **Stateful Position Management:** On startup, it automatically detects and imports any existing open positions from your Hyperliquid account.
-* **Advanced Risk Management:** Implements a multi-stage stop-loss system:
-    1.  An initial, fixed **ROE-based stop-loss**.
-    2.  A dynamic **Fibonacci-based trailing stop-loss** that activates to protect profits.
-    3.  A fixed **ROE-based take-profit**.
-* **Live Monitoring:** A powerful, real-time terminal dashboard to monitor your live position, risk parameters (SL/TP prices), technical indicators, and recent events.
-* **Data Backfilling:** Includes a utility to pre-load the bot's database with historical price data for robust analysis from the start.
-* **Manual Trade Trigger:** A testing tool to manually inject a "buy" signal, allowing you to safely test your trade execution and risk management logic without waiting for market conditions.
-* **Discord Notifications:** Sends real-time alerts for critical events like bot startup, signal generation, and trade execution.
-* **Modular & Scalable:** Built with a clean, component-based architecture in Node.js, making it easy to understand, maintain, and extend.
-
----
-
-## 📂 Project Structure
-
-```
-/hyperliquid-node-bot
-|-- /src
-|   |-- /components
-|   |   |-- DataCollector.js       # Fetches live price data
-|   |   |-- TechnicalAnalyzer.js   # Calculates Fib levels, ATR, etc.
-|   |   |-- SignalGenerator.js     # Decides when to buy
-|   |   |-- TradeExecutor.js       # Places trades on the exchange
-|   |   |-- RiskManager.js         # Manages SL/TP for open positions
-|   |   |-- StateManager.js        # Tracks the bot's state (in position?)
-|   |   |-- Notifier.js            # Sends Discord alerts
-|   |-- /database
-|   |   |-- DatabaseManager.js     # Handles all SQLite operations
-|   |-- /utils
-|   |   |-- logger.js              # For pretty console logs
-|   |-- app.js                     # The main application entry point
-|-- .env                           # Your secret keys and config
-|-- config.js                      # Main configuration for the bot
-|-- package.json                   # Project dependencies
-|-- historical_prices.json         # (Optional) Your historical data for backfilling
-|-- backfill_data.js               # Script to load historical data
-|-- clear_prices.js                # Script to clear price data from the DB
-|-- monitor_db.js                  # The live monitoring dashboard script
-|-- trigger_trade.js               # The manual trade injection script
-```
-
----
-
-## 🚀 Setup and Installation
-
-### 1. Prerequisites
-
-* **Node.js:** Version 18 or higher.
-* **npm:** Should be included with your Node.js installation.
-
-### 2. Clone the Repository
-
-Clone this project to your local machine:
-```bash
-git clone <your-repository-url>
-cd hyperliquid-node-bot
-```
-
-### 3. Install Dependencies
-
-Install all the necessary packages defined in `package.json`:
-```bash
-npm install
-```
-
-### 4. Configure Your Bot
-
-Create a file named `.env` in the root of the project directory. This is where you will store all your secret keys.
-
-**Copy and paste the following into your `.env` file and fill in your details:**
-
-```
-# This private key is for the wallet that has permission to place trades (API Wallet)
-HYPERLIQUID_WALLET_PRIVATE_KEY="your_api_wallet_private_key_here"
-
-# This PUBLIC ADDRESS is for the main account that holds the positions
-HYPERLIQUID_MAIN_ACCOUNT_ADDRESS="your_main_account_public_address_here"
-
-# Your Discord webhook URL for notifications
-DISCORD_WEBHOOK_URL="your_discord_webhook_url_here"
-```
-
-You can also adjust the core trading parameters (like trade size, leverage, and stop-loss percentages) in the `config.js` file.
-
----
-
-## 🛠️ Usage
-
-### 1. Backfill Historical Data (Optional but Recommended)
-
-To ensure the bot's technical analysis is accurate from the very first trade, you can pre-load its database with historical price data.
-
-1.  **Prepare your data:** Create a file named `historical_prices.json` in the project's root directory. The format must be a JSON array of objects, like this:
-    ```json
-    [
-      { "timestamp": "2025-08-23T11:43:01.488Z", "price": 203.015 },
-      { "timestamp": "2025-08-23T11:44:02.487Z", "price": 202.975 }
-    ]
-    ```
-2.  **Clear old data (if any):** `node clear_prices.js`
-3.  **Run the backfill script:**
-    ```bash
-    node backfill_data.js
-    ```
-
-### 2. Start the Bot
-
-Run the main application from the root directory. It will start collecting data, analyzing the market, and executing trades when the conditions are met.
-```bash
-node src/app.js
-```
-
-### 3. Monitor the Bot in Real-Time
-
-The live monitoring dashboard is the best way to see what your bot is doing. It shows your open position, live risk parameters, technical analysis, and recent events.
-
-**Open a second terminal window**, navigate to the project directory, and run:
-```bash
-node monitor_db.js
-```
-
-### 4. Test with a Manual Trade
-
-You can test your `TradeExecutor` and `RiskManager` without waiting for a real signal.
-
-**Open a third terminal window**, navigate to the project directory, and run:
-```bash
-# To force a buy signal
-node trigger_trade.js buy
-
-# To clear the trigger if you change your mind
-node trigger_trade.js clear
-```
-The bot will detect the trigger on its next cycle, send a Discord alert, and attempt to execute the trade.
+**Disclaimer**: This software is provided for educational purposes only. Trading cryptocurrencies involves substantial risk and may not be suitable for all investors. The authors and contributors are not responsible for any financial losses incurred through the use of this software.
