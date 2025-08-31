@@ -1096,6 +1096,12 @@ client.on('messageCreate', async (message) => {
                 return message.channel.send(`❌ Token ${token} not found.`);
             }
 
+            // Helper function to get appropriate decimal places for price formatting
+            const getPriceDecimals = (tokenSymbol) => {
+                return tokenSymbol === 'DOGE' ? 4 : 2;
+            };
+            const priceDecimals = getPriceDecimals(token);
+
             const analysisData = await readTokenAnalysisFile(token, 'live_analysis.json');
             const riskData = await readTokenAnalysisFile(token, 'live_risk.json');
             const status = multiManager.getStatus();
@@ -1145,7 +1151,7 @@ client.on('messageCreate', async (message) => {
                 const pnlEmoji = (typeof roe === 'string' && roe.includes('-')) ? "🔴" : "🟢";
                 embed.addFields({
                     name: `💼 Position: ${riskData.asset}`,
-                    value: `**Entry:** $${riskData.entryPrice?.toFixed(2) || 'N/A'}\n**Current:** $${riskData.currentPrice?.toFixed(2) || 'N/A'}\n**ROE:** ${pnlEmoji} ${roe}`,
+                    value: `**Entry:** $${riskData.entryPrice?.toFixed(priceDecimals) || 'N/A'}\n**Current:** $${riskData.currentPrice?.toFixed(priceDecimals) || 'N/A'}\n**ROE:** ${pnlEmoji} ${roe}`,
                     inline: true
                 });
             } else {
@@ -1160,7 +1166,7 @@ client.on('messageCreate', async (message) => {
             if (analysisData) {
                 embed.addFields({
                     name: "📈 Technical Data",
-                    value: `**Price:** $${analysisData.latest_price?.toFixed(2)}\n**Fib Entry:** $${analysisData.fib_entry?.toFixed(2)}\n**Fib 0:** $${analysisData.wma_fib_0?.toFixed(2)}`,
+                    value: `**Price:** $${analysisData.latest_price?.toFixed(priceDecimals)}\n**Fib Entry:** $${analysisData.fib_entry?.toFixed(priceDecimals)}\n**Fib 0:** $${analysisData.wma_fib_0?.toFixed(priceDecimals)}`,
                     inline: true
                 });
 
