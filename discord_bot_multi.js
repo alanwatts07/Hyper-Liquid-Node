@@ -37,6 +37,50 @@ if (CLAUDE_API_KEY) {
     claudeClient = null;
 }
 
+// Helper function to calculate dynamic stop-loss and take-profit prices with leverage
+function calculateDynamicPrices(riskData, leverage = 1) {
+    if (!riskData || !riskData.entryPrice) return { stopPrice: null, takeProfitPrice: null, stopType: 'N/A' };
+
+    const entryPrice = riskData.entryPrice;
+    let stopPrice = riskData.stopPrice; // Start with static stop
+    let takeProfitPrice = null;
+    let stopType = 'Fixed';
+
+    // Check for dynamic stop-loss percentage (adjust for leverage)
+    if (riskData.liveStopLossPercentage && typeof riskData.liveStopLossPercentage === 'number') {
+        const leveragedSLPct = riskData.liveStopLossPercentage / leverage;
+        stopPrice = entryPrice * (1 - leveragedSLPct);
+        stopType = `Dynamic ${(riskData.liveStopLossPercentage * 100).toFixed(2)}%`;
+    }
+
+    // Check for dynamic take-profit percentage (adjust for leverage)
+    if (riskData.liveTakeProfitPercentage && typeof riskData.liveTakeProfitPercentage === 'number') {
+        const leveragedTPPct = riskData.liveTakeProfitPercentage / leverage;
+        takeProfitPrice = entryPrice * (1 + leveragedTPPct);
+    }
+
+    // Check if using fibonacci trailing stop
+    if (riskData.fibStopActive) {
+        stopType = 'Fib Trail';
+    }
+
+    return { stopPrice, takeProfitPrice, stopType };
+}
+
+// Helper function to get token leverage from config
+async function getTokenLeverage(token) {
+    try {
+        const tokenConfig = multiConfig.tokens[token];
+        if (!tokenConfig?.configFile) return 1; // Default to 1x if no config
+
+        const configModule = await import(path.resolve(tokenConfig.configFile));
+        return configModule.default?.trading?.leverage || 1;
+    } catch (error) {
+        console.warn(`[Discord Bot] Could not load leverage for ${token}: ${error.message}`);
+        return 1; // Default to 1x leverage on error
+    }
+}
+
 // Initialize Discord client
 const client = new Client({
     intents: [
@@ -127,12 +171,16 @@ async function gatherMultiTokenContext() {
             const riskData = await readTokenAnalysisFile(token, 'live_risk.json');
             if (riskData) {
                 context.summary.activePositions++;
+                const leverage = await getTokenLeverage(token);
+                const dynamicPrices = calculateDynamicPrices(riskData, leverage);
                 tokenData.position = {
                     asset: riskData.asset,
                     entryPrice: riskData.entryPrice,
                     currentPrice: riskData.currentPrice,
                     roe: riskData.roe,
-                    stopPrice: riskData.stopPrice,
+                    stopPrice: dynamicPrices.stopPrice,
+                    takeProfitPrice: dynamicPrices.takeProfitPrice,
+                    stopType: dynamicPrices.stopType,
                     fibStopActive: riskData.fibStopActive
                 };
             }
@@ -210,7 +258,10 @@ function formatContextForAI(context) {
             formatted += `     - Entry: $${data.position.entryPrice?.toFixed(2) || 'N/A'}\n`;
             formatted += `     - Current: $${data.position.currentPrice?.toFixed(2) || 'N/A'}\n`;
             formatted += `     - ROE: ${data.position.roe || '0.00%'}\n`;
-            formatted += `     - Stop: ${data.position.fibStopActive ? 'Fib Trail' : 'Fixed'} @ $${data.position.stopPrice?.toFixed(2) || 'N/A'}\n`;
+            formatted += `     - Stop: ${data.position.stopType} @ $${data.position.stopPrice?.toFixed(2) || 'N/A'}\n`;
+            if (data.position.takeProfitPrice) {
+                formatted += `     - Target: $${data.position.takeProfitPrice.toFixed(2)}\n`;
+            }
         } else {
             formatted += `   • POSITION: None (monitoring for entries)\n`;
         }
@@ -1149,9 +1200,22 @@ client.on('messageCreate', async (message) => {
             if (riskData) {
                 const roe = riskData.roe || '0.00%';
                 const pnlEmoji = (typeof roe === 'string' && roe.includes('-')) ? "🔴" : "🟢";
+                const leverage = await getTokenLeverage(token);
+                const dynamicPrices = calculateDynamicPrices(riskData, leverage);
+                
+                let positionValue = `**Entry:** $${riskData.entryPrice?.toFixed(priceDecimals) || 'N/A'}\n**Current:** $${riskData.currentPrice?.toFixed(priceDecimals) || 'N/A'}\n**ROE:** ${pnlEmoji} ${roe}`;
+                
+                if (dynamicPrices.stopPrice) {
+                    positionValue += `\n**Stop:** ${dynamicPrices.stopType} @ $${dynamicPrices.stopPrice.toFixed(priceDecimals)}`;
+                }
+                
+                if (dynamicPrices.takeProfitPrice) {
+                    positionValue += `\n**Target:** $${dynamicPrices.takeProfitPrice.toFixed(priceDecimals)}`;
+                }
+                
                 embed.addFields({
                     name: `💼 Position: ${riskData.asset}`,
-                    value: `**Entry:** $${riskData.entryPrice?.toFixed(priceDecimals) || 'N/A'}\n**Current:** $${riskData.currentPrice?.toFixed(priceDecimals) || 'N/A'}\n**ROE:** ${pnlEmoji} ${roe}`,
+                    value: positionValue,
                     inline: true
                 });
             } else {
