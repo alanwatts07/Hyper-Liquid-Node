@@ -36,7 +36,7 @@ class TradingBot {
         this.notifier = new Notifier(this.config.discord);
         this.analyzer = new TechnicalAnalyzer(this.config);
         this.riskManager = new RiskManager(this.config, this.db);
-        this.signalGenerator = new SignalGenerator(this.config, this.db, this.state, this.notifier);
+        this.signalGenerator = new SignalGenerator(this.config, this.db, this.state, this.notifier, this.getAnalysisFile());
         this.latestAnalysis = null;
         this.lastTradeTime = null;
     }
@@ -102,7 +102,7 @@ class TradingBot {
         try {
             await this.db.savePriceData(priceData);
             const historicalData = await this.db.getHistoricalPriceData();
-            this.latestAnalysis = this.analyzer.calculate(historicalData, this.state);
+            this.latestAnalysis = this.analyzer.calculate(historicalData);
             if (this.latestAnalysis) {
                 await fs.writeFile(this.getAnalysisFile(), JSON.stringify(this.latestAnalysis, null, 2));
             }

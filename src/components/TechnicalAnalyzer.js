@@ -104,7 +104,7 @@ class TechnicalAnalyzer {
         return ohlcData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     }
 
-    calculate(historicalData, stateManager = null) {
+    calculate(historicalData) {
         const { fibLookback, wmaPeriod, atrPeriod, stoch } = this.config.ta;
         const minRecords = Math.max(fibLookback + wmaPeriod, stoch.rsiPeriod + stoch.stochPeriod);
         // --- 4-HOUR ANALYSIS ---
@@ -240,17 +240,13 @@ class TechnicalAnalyzer {
             const latest = completeResults[completeResults.length - 1];
             const fib_entry = latest.wma_fib_0 * (1 - this.config.ta.fibEntryOffsetPct); // Back to using wma_fib_0 name
 
-            // Add trigger state information if available
-            const triggerState = this.getTriggerStateInfo(stateManager, latest.close, fib_entry, latest.wma_fib_0);
-            
             return {
                 ...latest,
                 fib_entry,
                 latest_price: latest.close,
                 bull_state: bull_state, // <-- ADD THIS
-                stoch_rsi_4hr: stoch_rsi_4hr, // <-- ADD THIS
-                triggerArmed: triggerState.armed,
-                triggerReason: triggerState.reason
+                stoch_rsi_4hr: stoch_rsi_4hr // <-- ADD THIS
+                // Note: triggerArmed and triggerReason are now handled exclusively by SignalGenerator
             };
 
         } catch (error) {
@@ -260,52 +256,6 @@ class TechnicalAnalyzer {
         }
     }
 
-    /**
-     * Get trigger state information for display
-     * @param {StateManager} stateManager - Optional state manager instance
-     * @param {number} currentPrice - Current market price
-     * @param {number} fibEntry - Fibonacci entry level
-     * @param {number} wmaFib0 - WMA Fibonacci 0 level (bounce target)
-     * @returns {Object} Trigger state info
-     */
-    getTriggerStateInfo(stateManager, currentPrice, fibEntry, wmaFib0) {
-        if (!stateManager) {
-            return {
-                armed: false,
-                reason: 'StateManager not available'
-            };
-        }
-
-        const isArmed = stateManager.isTriggerArmed();
-        
-        if (isArmed) {
-            const distanceToTarget = ((currentPrice - wmaFib0) / wmaFib0 * 100).toFixed(2);
-            if (currentPrice > wmaFib0) {
-                return {
-                    armed: true,
-                    reason: `Armed - price ${distanceToTarget}% above bounce target $${wmaFib0.toFixed(3)}`
-                };
-            } else {
-                return {
-                    armed: true,
-                    reason: `Armed - waiting for bounce above $${wmaFib0.toFixed(3)} (${Math.abs(distanceToTarget)}% below)`
-                };
-            }
-        } else {
-            const distanceToTrigger = ((currentPrice - fibEntry) / fibEntry * 100).toFixed(2);
-            if (currentPrice > fibEntry) {
-                return {
-                    armed: false,
-                    reason: `Waiting for price drop to $${fibEntry.toFixed(3)} (${distanceToTrigger}% above trigger)`
-                };
-            } else {
-                return {
-                    armed: false,
-                    reason: `Price below trigger level - should arm soon`
-                };
-            }
-        }
-    }
 
     calculateRSI(prices, period) {
         let gains = [];

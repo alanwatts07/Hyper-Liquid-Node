@@ -1,12 +1,62 @@
 // src/components/SignalGenerator.js
 import logger from '../utils/logger.js';
+import fs from 'fs/promises';
 
 class SignalGenerator {
-    constructor(config, db, state, notifier) {
+    constructor(config, db, state, notifier, analysisFilePath) {
         this.config = config;
         this.db = db;
         this.state = state;
         this.notifier = notifier;
+        this.analysisFilePath = analysisFilePath;
+    }
+
+    // Update analysis file with current trigger state
+    async updateAnalysisFile(analysis) {
+        if (!this.analysisFilePath) {
+            logger.warn('SignalGenerator: No analysis file path provided, skipping file update');
+            return;
+        }
+
+        try {
+            // Create updated analysis with real trigger state
+            const updatedAnalysis = {
+                ...analysis,
+                triggerArmed: this.state.isTriggerArmed(),
+                triggerReason: this.getTriggerReason(analysis)
+            };
+
+            await fs.writeFile(this.analysisFilePath, JSON.stringify(updatedAnalysis, null, 2));
+            logger.debug(`SignalGenerator: Updated analysis file with trigger state: ${updatedAnalysis.triggerArmed}`);
+        } catch (error) {
+            logger.error(`SignalGenerator: Failed to update analysis file: ${error.message}`);
+        }
+    }
+
+    // Get accurate trigger reason based on real state and current prices
+    getTriggerReason(analysis) {
+        const { latest_price, fib_entry, wma_fib_0 } = analysis;
+        const isArmed = this.state.isTriggerArmed();
+        
+        if (isArmed) {
+            // When armed, show percentage needed to bounce for buy signal
+            if (latest_price > wma_fib_0) {
+                const percentageAbove = ((latest_price - wma_fib_0) / wma_fib_0 * 100).toFixed(2);
+                return `Armed - price ${percentageAbove}% above bounce target $${wma_fib_0.toFixed(4)} (ready for buy signal)`;
+            } else {
+                const percentageToTarget = ((wma_fib_0 - latest_price) / latest_price * 100).toFixed(2);
+                return `Armed - needs ${percentageToTarget}% bounce to $${wma_fib_0.toFixed(4)} for buy signal`;
+            }
+        } else {
+            // When not armed, show percentage needed to drop to arm trigger
+            if (latest_price > fib_entry) {
+                const percentageDrop = ((latest_price - fib_entry) / latest_price * 100).toFixed(2);
+                return `Needs ${percentageDrop}% drop to arm trigger (from $${latest_price.toFixed(4)} to $${fib_entry.toFixed(4)})`;
+            } else {
+                const percentageBelow = ((fib_entry - latest_price) / fib_entry * 100).toFixed(2);
+                return `Price ${percentageBelow}% below trigger $${fib_entry.toFixed(4)} - will arm momentarily`;
+            }
+        }
     }
 
     // --- 1. Make the function async ---
@@ -56,6 +106,8 @@ class SignalGenerator {
         if (!this.state.isTriggerArmed()) {
             if (latest_price < fib_entry) {
                 this.state.setTriggerArmed(true);
+                // Immediately update analysis file with new trigger state
+                await this.updateAnalysisFile(analysis);
                 const message = `BUY TRIGGER ARMED. Price ${latest_price.toFixed(2)} is below entry level ${fib_entry.toFixed(2)}.`;
                 logger.info(message);
                 this.notifier.send("Trigger Armed", message, "info");
@@ -77,6 +129,8 @@ class SignalGenerator {
                     logger.info(reason);
                     // Reset trigger state when trade is blocked (like successful trades)
                     this.state.setTriggerArmed(false);
+                    // Immediately update analysis file with new trigger state
+                    await this.updateAnalysisFile(analysis);
                     // Log the actual blocked trade event
                     await this.db.logEvent('TRADE_BLOCKED', { 
                         reason: '4hr_stoch_overbought', 
@@ -96,6 +150,8 @@ class SignalGenerator {
                         logger.info(reason);
                         // Reset trigger state when trade is blocked (like successful trades)
                         this.state.setTriggerArmed(false);
+                        // Immediately update analysis file with new trigger state
+                        await this.updateAnalysisFile(analysis);
                         // Log the actual blocked trade event
                         await this.db.logEvent('TRADE_BLOCKED', { 
                             reason: '4hr_trend_bearish_not_oversold', 
@@ -115,6 +171,8 @@ class SignalGenerator {
                         logger.info(reason);
                         // Reset trigger state when trade is blocked (like successful trades)
                         this.state.setTriggerArmed(false);
+                        // Immediately update analysis file with new trigger state
+                        await this.updateAnalysisFile(analysis);
                         // Log the actual blocked trade event
                         await this.db.logEvent('TRADE_BLOCKED', { 
                             reason: '5min_stoch_overbought', 
@@ -127,6 +185,8 @@ class SignalGenerator {
 
                 // If we get to this point, all enabled blockers and conditions have been passed.
                 this.state.setTriggerArmed(false);
+                // Immediately update analysis file with new trigger state
+                await this.updateAnalysisFile(analysis);
                 const message = `BUY SIGNAL! Price > WMA_Fib_0 (${wma_fib_0.toFixed(2)}) and all blockers passed.`;
                 logger.info(`🟢 ${message}`);
                 this.notifier.send("🔥 BUY SIGNAL 🔥", message, "success");
@@ -134,6 +194,9 @@ class SignalGenerator {
             }
             return { type: 'hold', reason: `Trigger is armed. Waiting for price > ${wma_fib_0.toFixed(2)}.` };
         }
+        
+        // Always update analysis file with current trigger state before returning
+        await this.updateAnalysisFile(analysis);
         
         return { type: 'hold', reason: 'No signal conditions met.' };
     }
