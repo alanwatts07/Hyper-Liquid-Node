@@ -103,9 +103,6 @@ class TradingBot {
             await this.db.savePriceData(priceData);
             const historicalData = await this.db.getHistoricalPriceData();
             this.latestAnalysis = this.analyzer.calculate(historicalData);
-            if (this.latestAnalysis) {
-                await fs.writeFile(this.getAnalysisFile(), JSON.stringify(this.latestAnalysis, null, 2));
-            }
             if (!this.latestAnalysis) return;
 
             if(this.latestAnalysis.stoch_rsi) {

@@ -27,7 +27,7 @@ class SignalGenerator {
             };
 
             await fs.writeFile(this.analysisFilePath, JSON.stringify(updatedAnalysis, null, 2));
-            logger.debug(`SignalGenerator: Updated analysis file with trigger state: ${updatedAnalysis.triggerArmed}`);
+            logger.info(`SignalGenerator: Updated analysis file with trigger state: ${updatedAnalysis.triggerArmed}`);
         } catch (error) {
             logger.error(`SignalGenerator: Failed to update analysis file: ${error.message}`);
         }
@@ -67,9 +67,11 @@ class SignalGenerator {
 
         // --- Safety Checks (ensure data exists) ---
         if (!stoch_rsi || typeof stoch_rsi.k === 'undefined' || typeof stoch_rsi.d === 'undefined') {
+            await this.updateAnalysisFile(analysis);
             return { type: 'hold', reason: 'Waiting for 5-min Stochastic RSI data.' };
         }
         if (!stoch_rsi_4hr || typeof stoch_rsi_4hr.k === 'undefined') {
+            await this.updateAnalysisFile(analysis);
             return { type: 'hold', reason: 'Waiting for 4-hour Stochastic RSI data.' };
         }
 
@@ -82,6 +84,7 @@ class SignalGenerator {
             const reason = `HOLD (BLOCKER): 4hr Stoch is overbought.`;
             logger.info(reason);
             // Don't log TRADE_BLOCKED here - only log when there's an actual buy signal blocked
+            await this.updateAnalysisFile(analysis);
             return { type: 'hold', reason };
         }
 
@@ -98,6 +101,7 @@ class SignalGenerator {
                 const reason = `HOLD (BLOCKER): 4hr price trend is bearish and Stoch is not oversold.`;
                 logger.info(reason);
                 // Don't log TRADE_BLOCKED here - only log when there's an actual buy signal blocked
+                await this.updateAnalysisFile(analysis);
                 return { type: 'hold', reason };
             }
         }
@@ -113,6 +117,7 @@ class SignalGenerator {
                 this.notifier.send("Trigger Armed", message, "info");
                 return { type: 'hold', reason: 'Trigger has been armed.' };
             }
+            await this.updateAnalysisFile(analysis);
             return { type: 'hold', reason: `Waiting for price < ${fib_entry.toFixed(2)} to arm trigger.` };
         }
 
@@ -192,6 +197,7 @@ class SignalGenerator {
                 this.notifier.send("🔥 BUY SIGNAL 🔥", message, "success");
                 return { type: 'buy', reason: message };
             }
+            await this.updateAnalysisFile(analysis);
             return { type: 'hold', reason: `Trigger is armed. Waiting for price > ${wma_fib_0.toFixed(2)}.` };
         }
         
