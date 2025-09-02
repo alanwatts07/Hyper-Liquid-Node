@@ -71,6 +71,7 @@ const client = new Client({
 let db;
 let lastProcessedEventId = 0;
 const commandPrefix = "!";
+let lastStatusMessageId = null; // Track the last status message for editing
 
 // Trading components for !buy command
 let tradeDb;
@@ -303,7 +304,24 @@ async function sendStatusReport() {
         const eventTime = new Date(lastEvent.timestamp).toLocaleTimeString();
         embed.setFooter({ text: `Last Event: ${lastEvent.event_type} at ${eventTime}` });
     }
-    await channel.send({ embeds: [embed] });
+    
+    // Try to edit the last status message instead of sending a new one
+    if (lastStatusMessageId) {
+        try {
+            const message = await channel.messages.fetch(lastStatusMessageId);
+            await message.edit({ embeds: [embed] });
+            console.log('✅ Updated existing status message');
+            return;
+        } catch (error) {
+            console.warn(`Failed to edit status message: ${error.message}`);
+            // If edit fails, we'll send a new message below
+        }
+    }
+    
+    // Send new message and store the ID for future edits
+    const sentMessage = await channel.send({ embeds: [embed] });
+    lastStatusMessageId = sentMessage.id;
+    console.log(`📨 Sent new status message (ID: ${lastStatusMessageId})`);
 }
 
 // --- Bot Events & Command Handling ---
