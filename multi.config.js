@@ -192,7 +192,7 @@ export default {
         },
 
         ADA: {
-            enabled: false,
+            enabled: true,
             symbol: 'ADA',
             configFile: 'configs/ADA.config.js',
             dataDir: 'data/ADA',
@@ -214,7 +214,7 @@ export default {
         },
 
         LINK: {
-            enabled: false,
+            enabled: true,
             symbol: 'LINK',
             configFile: 'configs/LINK.config.js',
             dataDir: 'data/LINK',
